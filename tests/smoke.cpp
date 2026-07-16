@@ -1,5 +1,8 @@
+#include <catch2/catch_test_macros.hpp>
 #include <cstring>
 
 #include "common/version.h"
 
-int main() { return std::strlen(cardinal::version()) > 0 ? 0 : 1; }
+TEST_CASE("arithmetic works") { REQUIRE(1 + 1 == 2); }
+
+TEST_CASE("version is not empty") { REQUIRE(std::strlen(cardinal::version()) > 0); }
