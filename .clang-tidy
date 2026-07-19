@@ -1,0 +1,3 @@
+Checks: 'bugprone-*,modernize-use-*,performance-*'
+WarningsAsErrors: ''
+HeaderFilterRegex: '^.*/src/.*'
