@@ -11,7 +11,7 @@ add_library(cardinal_warnings INTERFACE)
 target_compile_options(cardinal_warnings INTERFACE -Wall -Wextra -Wpedantic -Werror)
 
 # The core library. The shell, tests and benchmarks all link to it.
-add_library(cardinal_core src/common/version.cpp)
+add_library(cardinal_core src/common/value.cpp src/common/version.cpp)
 target_include_directories(cardinal_core PUBLIC src)
 target_link_libraries(cardinal_core PUBLIC cardinal_warnings)
 
