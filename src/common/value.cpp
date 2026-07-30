@@ -29,7 +29,6 @@ std::string double_to_string(double v) {
     char buf[64];
     auto [end, ec] = std::to_chars(buf, buf + sizeof buf, v);
     std::string s(buf, end);
-    // Keep 2.0 looking like a double rather than the integer 2.
     if (s.find_first_of(".einfa") == std::string::npos) s += ".0";
     return s;
 }

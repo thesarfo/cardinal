@@ -8,7 +8,6 @@ int main() {
 
     std::string line;
     while (std::cout << "cardinal> " && std::getline(std::cin, line)) {
-        // Anything that isn't SQL starts with a dot, so it can't clash with SQL.
         if (line == ".quit") break;
         std::cout << line << '\n';
     }
