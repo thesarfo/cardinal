@@ -53,6 +53,13 @@ public:
         return e;
     }
 
+    Statement statement_to_end() {
+        Statement s = statement(/*allow_explain=*/true);
+        match(TokenKind::Semicolon);
+        if (peek().kind != TokenKind::End) error_at(peek(), "expected end of input");
+        return s;
+    }
+
 private:
     const Token& peek(std::size_t ahead = 0) const {
         std::size_t i = pos_ + ahead;
@@ -83,6 +90,114 @@ private:
     void fail_on_lex_error() const {
         for (const Token& t : tokens_)
             if (t.kind == TokenKind::Error) error_at(t, t.text);
+    }
+
+    Statement statement(bool allow_explain) {
+        const Token& t = peek();
+        switch (t.kind) {
+            case TokenKind::Create: return Statement{create_table()};
+            case TokenKind::Insert: return Statement{insert()};
+            case TokenKind::Select: return Statement{select()};
+            case TokenKind::Explain:
+                if (!allow_explain) break;
+                advance();
+                return Statement{
+                    Explain{std::make_unique<Statement>(statement(/*allow_explain=*/false))}};
+            default: break;
+        }
+        error_at(t, "expected a statement");
+    }
+
+    std::string name(const char* what) {
+        const Token& t = peek();
+        if (t.kind != TokenKind::Identifier) error_at(t, std::string("expected ") + what);
+        advance();
+        return t.text;
+    }
+
+    Type column_type() {
+        const Token& t = advance();
+        switch (t.kind) {
+            case TokenKind::IntType: return Type::Int;
+            case TokenKind::DoubleType: return Type::Double;
+            case TokenKind::TextType: return Type::Text;
+            case TokenKind::BoolType: return Type::Bool;
+            default: error_at(t, "expected a column type (INT, DOUBLE, TEXT or BOOL)");
+        }
+    }
+
+    CreateTable create_table() {
+        expect(TokenKind::Create);
+        expect(TokenKind::Table);
+        CreateTable ct;
+        ct.name = name("a table name");
+        expect(TokenKind::LParen);
+        do {
+            std::string column = name("a column name");
+            ct.columns.push_back({std::move(column), column_type()});
+        } while (match(TokenKind::Comma));
+        expect(TokenKind::RParen);
+        return ct;
+    }
+
+    Insert insert() {
+        expect(TokenKind::Insert);
+        expect(TokenKind::Into);
+        Insert ins;
+        ins.table = name("a table name");
+        expect(TokenKind::Values);
+        do {
+            expect(TokenKind::LParen);
+            std::vector<ExprPtr> row;
+            do {
+                row.push_back(expression(kOr));
+            } while (match(TokenKind::Comma));
+            expect(TokenKind::RParen);
+            ins.rows.push_back(std::move(row));
+        } while (match(TokenKind::Comma));
+        return ins;
+    }
+
+    Select select() {
+        expect(TokenKind::Select);
+        Select sel;
+        if (match(TokenKind::Star)) {
+            sel.items.push_back({Star{}});
+        } else {
+            do {
+                sel.items.push_back({expression(kOr)});
+            } while (match(TokenKind::Comma));
+        }
+        expect(TokenKind::From);
+        sel.from = name("a table name");
+        if (match(TokenKind::Where)) sel.where = expression(kOr);
+        if (match(TokenKind::Order)) {
+            expect(TokenKind::By);
+            do {
+                ExprPtr key = expression(kOr);
+                bool descending = false;
+                if (match(TokenKind::Desc)) {
+                    descending = true;
+                } else {
+                    match(TokenKind::Asc);
+                }
+                sel.order_by.push_back({std::move(key), descending});
+            } while (match(TokenKind::Comma));
+        }
+        if (match(TokenKind::Limit)) {
+            const Token& t = peek();
+            if (t.kind != TokenKind::Integer) error_at(t, "expected a whole number after LIMIT");
+            advance();
+            sel.limit = integer(t);
+        }
+        return sel;
+    }
+
+    std::int64_t integer(const Token& t) const {
+        std::int64_t v = 0;
+        auto [end, ec] = std::from_chars(t.text.data(), t.text.data() + t.text.size(), v);
+        if (ec != std::errc()) error_at(t, "integer is too large");
+        return v;
     }
 
     ExprPtr expression(int min_bp) {
@@ -150,12 +265,7 @@ private:
     ExprPtr primary() {
         const Token& t = advance();
         switch (t.kind) {
-            case TokenKind::Integer: {
-                std::int64_t v = 0;
-                auto [end, ec] = std::from_chars(t.text.data(), t.text.data() + t.text.size(), v);
-                if (ec != std::errc()) error_at(t, "integer is too large");
-                return lit(Value(v));
-            }
+            case TokenKind::Integer: return lit(Value(integer(t)));
             case TokenKind::Decimal: {
                 double v = 0;
                 std::from_chars(t.text.data(), t.text.data() + t.text.size(), v);
@@ -191,5 +301,7 @@ private:
 }  // namespace
 
 ExprPtr parse_expression(std::string_view sql) { return Parser(sql).expression_to_end(); }
+
+Statement parse_statement(std::string_view sql) { return Parser(sql).statement_to_end(); }
 
 }  // namespace cardinal

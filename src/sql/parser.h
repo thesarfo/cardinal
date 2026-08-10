@@ -32,4 +32,7 @@ private:
 // Parses one expression and requires nothing after it. Throws ParseError.
 ExprPtr parse_expression(std::string_view sql);
 
+// Parses one statement, with an optional trailing ';'. Throws ParseError.
+Statement parse_statement(std::string_view sql);
+
 }  // namespace cardinal
