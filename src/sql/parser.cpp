@@ -304,4 +304,24 @@ ExprPtr parse_expression(std::string_view sql) { return Parser(sql).expression_t
 
 Statement parse_statement(std::string_view sql) { return Parser(sql).statement_to_end(); }
 
+std::string format_error(std::string_view sql, const ParseError& error) {
+    // Find the line the error is on.
+    std::size_t start = 0;
+    for (int line = 1; line < error.line(); ++line) {
+        std::size_t newline = sql.find('\n', start);
+        if (newline == std::string_view::npos) break;
+        start = newline + 1;
+    }
+    std::size_t end = sql.find('\n', start);
+    std::string text(sql.substr(start, end == std::string_view::npos ? end : end - start));
+    // Tabs would push the caret out of line.
+    for (char& c : text)
+        if (c == '\t') c = ' ';
+
+    std::string out = std::string("error: ") + error.what() + "\n";
+    out += "  " + text + "\n";
+    out += "  " + std::string(static_cast<std::size_t>(error.column() - 1), ' ') + "^";
+    return out;
+}
+
 }  // namespace cardinal

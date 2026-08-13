@@ -35,4 +35,10 @@ ExprPtr parse_expression(std::string_view sql);
 // Parses one statement, with an optional trailing ';'. Throws ParseError.
 Statement parse_statement(std::string_view sql);
 
+// Shows an error with the offending line and a caret under the bad token:
+//   error: expected ')' at 1:7
+//     (1 + 2
+//           ^
+std::string format_error(std::string_view sql, const ParseError& error);
+
 }  // namespace cardinal
