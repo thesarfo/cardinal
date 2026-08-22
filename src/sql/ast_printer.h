@@ -12,4 +12,9 @@ namespace cardinal {
 std::string print(const Expr& expr);
 std::string print(const Statement& statement);
 
+// Shared with the bound-expression printer.
+const char* binary_op_name(BinaryOp op);
+const char* unary_op_name(UnaryOp op);
+std::string format_literal(const Value& value);
+
 }  // namespace cardinal

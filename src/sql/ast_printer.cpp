@@ -12,9 +12,11 @@ struct Overloaded : Ts... {
     using Ts::operator()...;
 };
 
-const char* unary_name(UnaryOp op) { return op == UnaryOp::Not ? "not" : "neg"; }
+}  // namespace
 
-const char* binary_name(BinaryOp op) {
+const char* unary_op_name(UnaryOp op) { return op == UnaryOp::Not ? "not" : "neg"; }
+
+const char* binary_op_name(BinaryOp op) {
     switch (op) {
         case BinaryOp::Add: return "+";
         case BinaryOp::Sub: return "-";
@@ -33,12 +35,16 @@ const char* binary_name(BinaryOp op) {
     return "?";
 }
 
+namespace {
+
 std::string lower(std::string s) {
     std::ranges::transform(s, s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
-std::string literal_text(const Value& v) {
+}  // namespace
+
+std::string format_literal(const Value& v) {
     if (v.is_null()) return "null";
     if (v.type() != Type::Text) return v.to_string();
     std::string out = "'";
@@ -48,6 +54,8 @@ std::string literal_text(const Value& v) {
     }
     return out + "'";
 }
+
+namespace {
 
 std::string join_exprs(const std::vector<ExprPtr>& exprs) {
     std::string out;
@@ -60,15 +68,15 @@ std::string join_exprs(const std::vector<ExprPtr>& exprs) {
 std::string print(const Expr& expr) {
     return std::visit(
         Overloaded{
-            [](const Literal& n) { return literal_text(n.value); },
+            [](const Literal& n) { return format_literal(n.value); },
             [](const ColumnRef& n) {
                 return "(col " + (n.table ? *n.table + "." : "") + n.name + ")";
             },
             [](const Unary& n) {
-                return std::string("(") + unary_name(n.op) + " " + print(*n.operand) + ")";
+                return std::string("(") + unary_op_name(n.op) + " " + print(*n.operand) + ")";
             },
             [](const Binary& n) {
-                return std::string("(") + binary_name(n.op) + " " + print(*n.left) + " " +
+                return std::string("(") + binary_op_name(n.op) + " " + print(*n.left) + " " +
                        print(*n.right) + ")";
             },
             [](const IsNull& n) {
