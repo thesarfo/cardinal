@@ -18,6 +18,7 @@ add_library(cardinal_core
   src/catalog/catalog.cpp
   src/common/value.cpp
   src/common/version.cpp
+  src/expr/evaluator.cpp
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp
