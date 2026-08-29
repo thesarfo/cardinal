@@ -14,11 +14,14 @@ target_compile_options(cardinal_warnings INTERFACE -Wall -Wextra -Wpedantic -Wer
 add_library(cardinal_core
   src/binder/binder.cpp
   src/binder/bound_expr.cpp
+  src/binder/format.cpp
   src/binder/scope.cpp
   src/catalog/catalog.cpp
   src/common/value.cpp
   src/common/version.cpp
   src/expr/evaluator.cpp
+  src/logical/plan_printer.cpp
+  src/logical/planner.cpp
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp
