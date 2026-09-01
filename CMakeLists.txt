@@ -25,6 +25,8 @@ add_library(cardinal_core
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp
+  src/physical/physical_planner.cpp
+  src/physical/physical_printer.cpp
   src/storage/table.cpp
 )
 target_include_directories(cardinal_core PUBLIC src)

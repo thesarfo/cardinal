@@ -1,5 +1,7 @@
 #include "binder/format.h"
 
+#include <functional>
+
 #include "sql/ast_printer.h"
 
 namespace cardinal {
@@ -25,7 +27,7 @@ std::string literal(const Value& v) {
     return format_literal(v);
 }
 
-std::string column_name(ColumnId id, const Scope& scope) {
+std::string scope_column_name(ColumnId id, const Scope& scope) {
     const ColumnMeta& meta = scope.meta(id);
     int tables_with_name = 0;
     for (const BoundTable& t : scope.tables())
@@ -53,36 +55,38 @@ struct Text {
     int level;
 };
 
-Text render(const BoundExpr& expr, const Scope& scope);
+using Namer = std::function<std::string(ColumnId)>;
+
+Text render(const BoundExpr& expr, const Namer& name);
 
 // A child gets brackets when it binds looser than its parent, so the text reads back
 // the way the tree is shaped.
-std::string child(const BoundExpr& expr, const Scope& scope, int min_level) {
-    Text t = render(expr, scope);
+std::string child(const BoundExpr& expr, const Namer& name, int min_level) {
+    Text t = render(expr, name);
     return t.level < min_level ? "(" + t.text + ")" : t.text;
 }
 
-Text render(const BoundExpr& expr, const Scope& scope) {
+Text render(const BoundExpr& expr, const Namer& name) {
     return std::visit(
         Overloaded{
             [&](const BoundLiteral& n) { return Text{literal(n.value), kAtom}; },
-            [&](const BoundColumn& n) { return Text{column_name(n.id, scope), kAtom}; },
+            [&](const BoundColumn& n) { return Text{name(n.id), kAtom}; },
             [&](const BoundUnary& n) {
                 if (n.op == UnaryOp::Not)
-                    return Text{"NOT " + child(*n.operand, scope, kNot), kNot};
-                return Text{"-" + child(*n.operand, scope, kAtom), kNeg};
+                    return Text{"NOT " + child(*n.operand, name, kNot), kNot};
+                return Text{"-" + child(*n.operand, name, kAtom), kNeg};
             },
             [&](const BoundBinary& n) {
                 int p = level(n.op);
                 // Same-level children on the right keep their brackets: a AND (b AND c)
                 // is a different tree from (a AND b) AND c. Comparisons never chain.
                 int left_min = p == kCompare ? p + 1 : p;
-                return Text{child(*n.left, scope, left_min) + " " + upper_op(n.op) + " " +
-                                child(*n.right, scope, p + 1),
+                return Text{child(*n.left, name, left_min) + " " + upper_op(n.op) + " " +
+                                child(*n.right, name, p + 1),
                             p};
             },
             [&](const BoundIsNull& n) {
-                return Text{child(*n.operand, scope, kAdd) +
+                return Text{child(*n.operand, name, kAdd) +
                                 (n.negated ? " IS NOT NULL" : " IS NULL"),
                             kCompare};
             },
@@ -92,6 +96,12 @@ Text render(const BoundExpr& expr, const Scope& scope) {
 
 }  // namespace
 
-std::string format(const BoundExpr& expr, const Scope& scope) { return render(expr, scope).text; }
+std::string format(const BoundExpr& expr, const Scope& scope) {
+    return render(expr, [&](ColumnId id) { return scope_column_name(id, scope); }).text;
+}
+
+std::string format(const BoundExpr& expr, const std::function<std::string(ColumnId)>& column_name) {
+    return render(expr, column_name).text;
+}
 
 }  // namespace cardinal
