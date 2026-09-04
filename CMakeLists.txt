@@ -19,6 +19,10 @@ add_library(cardinal_core
   src/catalog/catalog.cpp
   src/common/value.cpp
   src/common/version.cpp
+  src/exec/filter.cpp
+  src/exec/operator.cpp
+  src/exec/project.cpp
+  src/exec/seq_scan.cpp
   src/expr/evaluator.cpp
   src/logical/plan_printer.cpp
   src/logical/planner.cpp

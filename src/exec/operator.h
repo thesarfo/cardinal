@@ -1,0 +1,41 @@
+#pragma once
+
+#include <chrono>
+#include <cstdint>
+#include <optional>
+
+#include "common/value.h"
+
+namespace cardinal {
+
+// What an operator did while running. EXPLAIN ANALYZE reads these later to set
+// the guessed row counts against the real ones.
+struct ExecStats {
+    std::uint64_t rows_out = 0;
+    // Time spent inside next(), counting the operators below it.
+    std::chrono::nanoseconds time{0};
+};
+
+// One step of a running plan. A query runs by asking the top operator for a row;
+// it asks the operator below it, and so on down to the scan. Rows flow up one at
+// a time (the "iterator model"), so nothing is built in bulk unless a step has to
+// (Sort does).
+class Operator {
+public:
+    virtual ~Operator() = default;
+
+    // The next row, or nothing once the input is used up. Counts rows and time.
+    std::optional<Row> next();
+
+    const ExecStats& stats() const { return stats_; }
+
+protected:
+    // Each operator's real work. Not called again after it returns nothing.
+    virtual std::optional<Row> produce() = 0;
+
+private:
+    ExecStats stats_;
+    bool done_ = false;
+};
+
+}  // namespace cardinal
