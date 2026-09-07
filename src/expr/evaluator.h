@@ -18,6 +18,11 @@ namespace cardinal {
 // types compare as numbers; INT op INT stays INT (and `/` truncates).
 Value evaluate(const BoundExpr& expr, const Row& row);
 
+// -1, 0 or 1. Both values must be non-NULL and of comparable types, which the
+// binder has already checked. INT and DOUBLE compare as numbers, TEXT by bytes,
+// and false sorts before true.
+int compare_values(const Value& a, const Value& b);
+
 // True only for the value `true`. NULL and false both drop a row from a WHERE.
 inline bool is_true(const Value& v) { return !v.is_null() && v.as_bool(); }
 

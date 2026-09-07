@@ -17,21 +17,9 @@ double as_number(const Value& v) {
     return v.type() == Type::Int ? static_cast<double>(v.as_int()) : v.as_double();
 }
 
-// -1, 0 or 1. Both values are non-NULL and the binder has checked they are comparable.
-int compare(const Value& a, const Value& b) {
-    if (a.type() == Type::Int && b.type() == Type::Int)
-        return a.as_int() < b.as_int() ? -1 : a.as_int() > b.as_int() ? 1 : 0;
-    if (a.type() == Type::Text) return a.as_text().compare(b.as_text()) < 0   ? -1
-                                       : a.as_text() == b.as_text()           ? 0
-                                                                              : 1;
-    if (a.type() == Type::Bool) return static_cast<int>(a.as_bool()) - static_cast<int>(b.as_bool());
-    double x = as_number(a), y = as_number(b);
-    return x < y ? -1 : x > y ? 1 : 0;
-}
-
 Value compare_op(BinaryOp op, const Value& a, const Value& b) {
     if (a.is_null() || b.is_null()) return Value();
-    int c = compare(a, b);
+    int c = compare_values(a, b);
     switch (op) {
         case BinaryOp::Eq: return Value(c == 0);
         case BinaryOp::Ne: return Value(c != 0);
@@ -89,6 +77,18 @@ Value logic(BinaryOp op, const Value& a, const Value& b) {
 }
 
 }  // namespace
+
+// -1, 0 or 1. Both values are non-NULL and the binder has checked they are comparable.
+int compare_values(const Value& a, const Value& b) {
+    if (a.type() == Type::Int && b.type() == Type::Int)
+        return a.as_int() < b.as_int() ? -1 : a.as_int() > b.as_int() ? 1 : 0;
+    if (a.type() == Type::Text) return a.as_text().compare(b.as_text()) < 0   ? -1
+                                       : a.as_text() == b.as_text()           ? 0
+                                                                              : 1;
+    if (a.type() == Type::Bool) return static_cast<int>(a.as_bool()) - static_cast<int>(b.as_bool());
+    double x = as_number(a), y = as_number(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+}
 
 Value evaluate(const BoundExpr& expr, const Row& row) {
     return std::visit(
