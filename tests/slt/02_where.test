@@ -1,0 +1,97 @@
+# WHERE keeps the rows where the condition is true.
+
+statement ok
+CREATE TABLE t (a INT, b INT, name TEXT)
+
+statement ok
+INSERT INTO t VALUES (1, 10, 'one'), (2, 20, 'two'), (3, 30, 'three'), (4, 40, 'four'), (5, 50, 'five')
+
+query I
+SELECT a FROM t WHERE a > 3
+----
+4
+5
+
+query I
+SELECT a FROM t WHERE a >= 3
+----
+3
+4
+5
+
+query I
+SELECT a FROM t WHERE a <> 3
+----
+1
+2
+4
+5
+
+query I
+SELECT a FROM t WHERE a = 2
+----
+2
+
+query I
+SELECT a FROM t WHERE a < 1
+----
+
+query I
+SELECT a FROM t WHERE a > 1 AND b < 40
+----
+2
+3
+
+query I
+SELECT a FROM t WHERE a = 1 OR a = 5
+----
+1
+5
+
+# AND binds tighter than OR.
+query I
+SELECT a FROM t WHERE a = 1 OR a > 3 AND b < 50
+----
+1
+4
+
+query I
+SELECT a FROM t WHERE NOT a > 2
+----
+1
+2
+
+query I
+SELECT a FROM t WHERE NOT (a = 1 OR a = 2)
+----
+3
+4
+5
+
+# The condition can compare two columns, or use arithmetic.
+query I
+SELECT a FROM t WHERE b = a * 10 AND a + 1 > 4
+----
+4
+5
+
+query T
+SELECT name FROM t WHERE name = 'three'
+----
+three
+
+query T
+SELECT name FROM t WHERE name < 'g'
+----
+four
+five
+
+# A condition that is always true keeps everything.
+query I
+SELECT a FROM t WHERE 1 = 1
+----
+1
+2
+3
+4
+5

@@ -1,0 +1,98 @@
+# Text and true/false columns.
+
+statement ok
+CREATE TABLE t (name TEXT, active BOOL, n INT)
+
+statement ok
+INSERT INTO t VALUES ('ama', TRUE, 1), ('Kofi', FALSE, 2), ('esi', TRUE, 3), ('', FALSE, 4), ('it''s', NULL, 5)
+
+# Text compares by bytes, so capitals sort before lower case.
+query T nosort
+SELECT name FROM t ORDER BY name
+----
+(empty)
+Kofi
+ama
+esi
+it's
+
+query I
+SELECT n FROM t WHERE name = ''
+----
+4
+
+# A doubled quote is one quote.
+query I
+SELECT n FROM t WHERE name = 'it''s'
+----
+5
+
+query I
+SELECT n FROM t WHERE name > 'b'
+----
+3
+5
+
+# True/false columns work as conditions on their own.
+query I
+SELECT n FROM t WHERE active
+----
+1
+3
+
+query I
+SELECT n FROM t WHERE NOT active
+----
+2
+4
+
+query I
+SELECT n FROM t WHERE active = TRUE
+----
+1
+3
+
+query I
+SELECT n FROM t WHERE active IS NULL
+----
+5
+
+query I
+SELECT n FROM t WHERE active AND n > 1
+----
+3
+
+query I
+SELECT n FROM t WHERE active OR n = 5
+----
+1
+3
+5
+
+# false sorts before true, and NULL before both.
+query I nosort
+SELECT n FROM t ORDER BY active, n
+----
+5
+2
+4
+1
+3
+
+# A true/false result can be selected, and prints as 1 or 0.
+query II nosort
+SELECT n, n > 2 FROM t ORDER BY n LIMIT 4
+----
+1
+0
+2
+0
+3
+1
+4
+1
+
+query T
+SELECT 'a' FROM t LIMIT 1
+----
+a

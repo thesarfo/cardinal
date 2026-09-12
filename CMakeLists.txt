@@ -19,6 +19,9 @@ add_library(cardinal_core
   src/catalog/catalog.cpp
   src/common/value.cpp
   src/common/version.cpp
+  src/engine/database.cpp
+  src/engine/result_format.cpp
+  src/exec/build.cpp
   src/exec/filter.cpp
   src/exec/limit.cpp
   src/exec/operator.cpp

@@ -1,0 +1,71 @@
+# The basics: make a table, put rows in, read them back.
+
+statement ok
+CREATE TABLE people (id INT, name TEXT, score DOUBLE)
+
+statement ok
+INSERT INTO people VALUES (1, 'ama', 9.5)
+
+statement ok
+INSERT INTO people VALUES (2, 'kofi', 3), (3, 'esi', 7.25)
+
+query ITR
+SELECT * FROM people
+----
+1
+ama
+9.500
+2
+kofi
+3.000
+3
+esi
+7.250
+
+query T
+SELECT name FROM people
+----
+ama
+kofi
+esi
+
+query IT
+SELECT id, name FROM people
+----
+1
+ama
+2
+kofi
+3
+esi
+
+# Columns can be picked in any order and more than once.
+query TII
+SELECT name, id, id FROM people
+----
+ama
+1
+1
+kofi
+2
+2
+esi
+3
+3
+
+# A table with no rows gives no rows.
+statement ok
+CREATE TABLE empty (a INT)
+
+query I
+SELECT a FROM empty
+----
+
+# Statements may be written in lower case and with a trailing semicolon.
+statement ok
+insert into empty values (5);
+
+query I
+select a from empty;
+----
+5

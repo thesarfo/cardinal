@@ -1,0 +1,92 @@
+# Numbers: INT stays INT, a DOUBLE anywhere makes the answer a DOUBLE.
+
+statement ok
+CREATE TABLE t (a INT, b INT, x DOUBLE)
+
+statement ok
+INSERT INTO t VALUES (7, 2, 1.5)
+
+query IIII
+SELECT a + b, a - b, a * b, a / b FROM t
+----
+9
+5
+14
+3
+
+# Division of whole numbers drops the fraction; the remainder is %.
+query II
+SELECT -7 / 2, -7 % 3 FROM t
+----
+-3
+-1
+
+query RRR
+SELECT a + x, a / 2.0, b * x FROM t
+----
+8.500
+3.500
+3.000
+
+# Order of operations.
+query III
+SELECT 1 + 2 * 3, (1 + 2) * 3, 10 - 4 - 3 FROM t
+----
+7
+9
+3
+
+query I
+SELECT -a FROM t
+----
+-7
+
+query I
+SELECT 1 - -2 FROM t
+----
+3
+
+# INT and DOUBLE compare as numbers.
+query I
+SELECT a FROM t WHERE a > x
+----
+7
+
+query I
+SELECT a FROM t WHERE x < 2
+----
+7
+
+query I
+SELECT a FROM t WHERE b = 2.0
+----
+7
+
+statement error
+SELECT a / 0 FROM t
+----
+division by zero
+
+statement error
+SELECT a % 0 FROM t
+----
+division by zero
+
+statement error
+SELECT x / 0 FROM t
+----
+division by zero
+
+# Whole numbers do not wrap around.
+statement ok
+INSERT INTO t VALUES (9223372036854775807, 1, 0)
+
+statement error
+SELECT a + b FROM t
+----
+integer overflow
+
+statement error
+SELECT a * 2 FROM t
+----
+integer overflow

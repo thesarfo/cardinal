@@ -1,0 +1,94 @@
+# Types: what fits where.
+
+statement ok
+CREATE TABLE t (i INT, d DOUBLE, s TEXT, b BOOL)
+
+# An INT fits a DOUBLE column and is stored as a double.
+statement ok
+INSERT INTO t VALUES (1, 2, 'x', TRUE)
+
+query IRTI
+SELECT * FROM t
+----
+1
+2.000
+x
+1
+
+statement error
+INSERT INTO t VALUES ('one', 2, 'x', TRUE)
+----
+column i is INT
+
+statement error
+INSERT INTO t VALUES (1, 'two', 'x', TRUE)
+----
+column d is DOUBLE
+
+# A DOUBLE does not fit an INT column.
+statement error
+INSERT INTO t VALUES (1.5, 2, 'x', TRUE)
+----
+column i is INT
+
+statement error
+INSERT INTO t VALUES (1, 2, 3, TRUE)
+----
+column s is TEXT
+
+statement error
+INSERT INTO t VALUES (1, 2, 'x', 1)
+----
+column b is BOOL
+
+# Wrong number of values.
+statement error
+INSERT INTO t VALUES (1, 2, 'x')
+----
+has 4 columns but 3 values
+
+# A bad row stops the whole insert: nothing was added.
+statement error
+INSERT INTO t VALUES (2, 2, 'y', FALSE), (3, 3, 3, FALSE)
+
+query I
+SELECT i FROM t
+----
+1
+
+# Comparing different kinds of thing.
+statement error
+SELECT i FROM t WHERE s = 1
+----
+cannot compare TEXT with INT
+
+statement error
+SELECT i FROM t WHERE b = 1
+----
+cannot compare BOOL with INT
+
+statement error
+SELECT i FROM t WHERE s + 1 > 0
+----
+needs numbers
+
+statement error
+SELECT i FROM t WHERE i AND b
+----
+AND needs true/false values
+
+statement error
+SELECT i FROM t WHERE i
+----
+WHERE needs a true/false value
+
+statement error
+SELECT i FROM t WHERE NOT i
+----
+NOT needs a true/false value
+
+# Remainder only works on whole numbers.
+statement error
+SELECT d % 2 FROM t
+----
+needs whole numbers

@@ -1,0 +1,99 @@
+# NULL means unknown. A comparison with NULL is unknown, and WHERE drops unknown rows.
+
+statement ok
+CREATE TABLE t (id INT, x INT)
+
+statement ok
+INSERT INTO t VALUES (1, 10), (2, NULL), (3, 30), (4, NULL)
+
+query I
+SELECT id FROM t WHERE x > 5
+----
+1
+3
+
+# x = x is not always true: it is unknown when x is NULL.
+query I
+SELECT id FROM t WHERE x = x
+----
+1
+3
+
+query I
+SELECT id FROM t WHERE x = NULL
+----
+
+# Neither a condition nor its opposite keeps the NULL rows.
+query I
+SELECT id FROM t WHERE NOT x > 5
+----
+
+query I
+SELECT id FROM t WHERE x IS NULL
+----
+2
+4
+
+query I
+SELECT id FROM t WHERE x IS NOT NULL
+----
+1
+3
+
+# false AND unknown is false; true AND unknown is unknown.
+query I
+SELECT id FROM t WHERE id = 1 AND x = 10
+----
+1
+
+query I
+SELECT id FROM t WHERE id = 2 AND x = 10
+----
+
+# true OR unknown is true; false OR unknown is unknown.
+query I
+SELECT id FROM t WHERE id = 2 OR x = 10
+----
+1
+2
+
+query I
+SELECT id FROM t WHERE id = 5 OR x = 10
+----
+1
+
+# NULL carries through arithmetic.
+query II
+SELECT id, x + 1 FROM t
+----
+1
+11
+2
+NULL
+3
+31
+4
+NULL
+
+query II
+SELECT id, x * 0 FROM t WHERE id < 3
+----
+1
+0
+2
+NULL
+
+# NULL can be stored in any column.
+statement ok
+CREATE TABLE u (a INT, b TEXT, c DOUBLE, d BOOL)
+
+statement ok
+INSERT INTO u VALUES (NULL, NULL, NULL, NULL)
+
+query ITRI
+SELECT * FROM u
+----
+NULL
+NULL
+NULL
+NULL

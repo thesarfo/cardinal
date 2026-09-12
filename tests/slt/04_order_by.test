@@ -1,0 +1,96 @@
+# ORDER BY: direction, several keys, ties and NULLs.
+
+statement ok
+CREATE TABLE t (a INT, b TEXT)
+
+statement ok
+INSERT INTO t VALUES (3, 'c'), (1, 'z'), (2, 'b'), (1, 'a'), (NULL, 'n')
+
+query IT nosort
+SELECT a, b FROM t ORDER BY a
+----
+NULL
+n
+1
+z
+1
+a
+2
+b
+3
+c
+
+query I nosort
+SELECT a FROM t ORDER BY a DESC
+----
+3
+2
+1
+1
+NULL
+
+# Ties keep the order the rows were inserted in, whichever way we sort.
+query T nosort
+SELECT b FROM t WHERE a = 1 ORDER BY a
+----
+z
+a
+
+query T nosort
+SELECT b FROM t WHERE a = 1 ORDER BY a DESC
+----
+z
+a
+
+# Second key breaks ties.
+query IT nosort
+SELECT a, b FROM t WHERE a IS NOT NULL ORDER BY a, b
+----
+1
+a
+1
+z
+2
+b
+3
+c
+
+query IT nosort
+SELECT a, b FROM t WHERE a IS NOT NULL ORDER BY a DESC, b DESC
+----
+3
+c
+2
+b
+1
+z
+1
+a
+
+# The sort column does not have to be in the SELECT list.
+query T nosort
+SELECT b FROM t ORDER BY a, b
+----
+n
+a
+z
+b
+c
+
+# Sort by an expression, and by text.
+query I nosort
+SELECT a FROM t WHERE a IS NOT NULL ORDER BY -a
+----
+3
+2
+1
+1
+
+query T nosort
+SELECT b FROM t ORDER BY b
+----
+a
+b
+c
+n
+z

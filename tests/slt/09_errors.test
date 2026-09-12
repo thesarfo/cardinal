@@ -1,0 +1,95 @@
+# Mistakes in the SQL, and in the names.
+
+statement ok
+CREATE TABLE users (id INT, name TEXT)
+
+statement error
+SELEC * FROM users
+----
+expected a statement
+
+statement error
+SELECT * users
+----
+expected 'FROM'
+
+statement error
+SELECT * FROM
+----
+expected a table name
+
+statement error
+SELECT * FROM users WHERE
+----
+expected an expression
+
+statement error
+SELECT * FROM users WHERE (id = 1
+----
+expected ')'
+
+statement error
+SELECT 'unfinished FROM users
+----
+unterminated string
+
+statement error
+SELECT * FROM users WHERE id @ 1
+----
+unexpected character
+
+statement error
+SELECT * FROM nope
+----
+unknown table nope
+
+statement error
+SELECT nope FROM users
+----
+unknown column nope
+
+statement error
+SELECT users.nope FROM users
+----
+unknown column users.nope
+
+statement error
+SELECT other.id FROM users
+----
+unknown table or alias other
+
+statement error
+SELECT * FROM users ORDER BY nope
+----
+unknown column nope
+
+statement error
+INSERT INTO nope VALUES (1)
+----
+unknown table nope
+
+# A value cannot refer to a column.
+statement error
+INSERT INTO users VALUES (id, 'x')
+----
+unknown column id
+
+statement error
+CREATE TABLE users (a INT)
+----
+already exists
+
+statement error
+CREATE TABLE two (a INT, a TEXT)
+----
+two columns named a
+
+statement error
+CREATE TABLE bad (a)
+----
+expected a column type
+
+# None of the failed statements left anything behind.
+query IT
+SELECT * FROM users
+----

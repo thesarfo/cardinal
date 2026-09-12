@@ -20,7 +20,13 @@ public:
     // (stored as a double).
     void insert(Row row);
 
+    // Same checks for every row first, then adds them all. If any row is bad, none are added.
+    void insert_rows(std::vector<Row> rows);
+
 private:
+    // Checks one row against the columns and converts INT to DOUBLE where needed.
+    void fit(Row& row) const;
+
     TableInfo info_;
     std::vector<Row> rows_;
 };
