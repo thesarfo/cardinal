@@ -30,10 +30,12 @@ add_library(cardinal_core
   src/exec/sort.cpp
   src/expr/evaluator.cpp
   src/logical/plan_printer.cpp
+  src/logical/plan_util.cpp
   src/logical/planner.cpp
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp
+  src/optimizer/rule_optimizer.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
   src/storage/table.cpp
