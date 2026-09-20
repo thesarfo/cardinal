@@ -8,9 +8,12 @@
 #include <string>
 #include <vector>
 
+#include "engine/database.h"
+#include "exec/build.h"
 #include "logical/plan_printer.h"
 #include "logical/planner.h"
 #include "optimizer/rule_optimizer.h"
+#include "physical/physical_planner.h"
 #include "sql/parser.h"
 
 namespace cardinal::testing {
