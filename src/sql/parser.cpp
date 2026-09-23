@@ -305,7 +305,6 @@ ExprPtr parse_expression(std::string_view sql) { return Parser(sql).expression_t
 Statement parse_statement(std::string_view sql) { return Parser(sql).statement_to_end(); }
 
 std::string format_error(std::string_view sql, const ParseError& error) {
-    // Find the line the error is on.
     std::size_t start = 0;
     for (int line = 1; line < error.line(); ++line) {
         std::size_t newline = sql.find('\n', start);

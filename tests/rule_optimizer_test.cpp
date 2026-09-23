@@ -28,7 +28,6 @@ public:
     }
 };
 
-// Never changes anything.
 class Idle : public Rule {
 public:
     std::string name() const override { return "idle"; }

@@ -165,7 +165,6 @@ TEST_CASE("bind: ambiguous column") {
     scope.add("orders", orders);
 
     require_error(scope, "id", "column id is ambiguous: it could be users.id or orders.id");
-    // A name only one table has is fine, and so is a qualified one.
     REQUIRE(print(*bind_in(scope, "user_id")) == "#5");
     REQUIRE(print(*bind_in(scope, "orders.id")) == "#4");
     REQUIRE(print(*bind_in(scope, "users.id = orders.user_id")) == "(= #0 #5)");

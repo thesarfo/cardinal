@@ -39,7 +39,6 @@ TEST_CASE("catalog: a table name can't be reused") {
     Catalog catalog;
     catalog.create_table(users());
     REQUIRE_THROWS_AS(catalog.create_table(users()), DbError);
-    // The first table is untouched.
     catalog.get_table("users")->insert({i(1), s("a"), Value(1.0)});
     REQUIRE_THROWS_AS(catalog.create_table({"users", {{"x", Type::Int}}}), DbError);
     REQUIRE(catalog.get_table("users")->rows().size() == 1);
@@ -77,9 +76,7 @@ TEST_CASE("table: values must fit their column") {
     REQUIRE_THROWS_AS(t.insert({i(1), i(2), Value(1.0)}), DbError);
     REQUIRE_THROWS_AS(t.insert({i(1), s("a"), s("high")}), DbError);
     REQUIRE(t.rows().empty());
-    // An INT fits a DOUBLE column and is stored as a double.
     t.insert({i(1), s("a"), i(3)});
     REQUIRE(t.rows()[0][2] == Value(3.0));
-    // A DOUBLE does not fit an INT column.
     REQUIRE_THROWS_AS(t.insert({Value(1.5), s("a"), Value(1.0)}), DbError);
 }

@@ -44,7 +44,6 @@ std::vector<Row> drain(Operator& op) {
     return rows;
 }
 
-// Column `index` of every row, for short expectations.
 std::vector<Value> column(const std::vector<Row>& rows, std::size_t index) {
     std::vector<Value> out;
     for (const Row& r : rows) out.push_back(r[index]);
@@ -81,7 +80,6 @@ TEST_CASE("sort: several keys, each with its own direction") {
     f.add(i(2), "y", Value(1.0));
     f.add(i(1), "z", Value(2.0));
     f.add(i(2), "w", Value(2.0));
-    // ORDER BY a DESC, b
     auto op = f.sort({{"a", true}, {"b", false}});
     auto rows = drain(*op);
     REQUIRE(column(rows, 1) == std::vector<Value>{s("w"), s("y"), s("x"), s("z")});

@@ -24,7 +24,6 @@ TEST_CASE("expr: precedence") {
         {"NOT a = b", "(not (= (col a) (col b)))"},
         {"NOT a AND b", "(and (not (col a)) (col b))"},
         {"NOT NOT a", "(not (not (col a)))"},
-        // arithmetic
         {"1 + 2 * 3", "(+ 1 (* 2 3))"},
         {"1 * 2 + 3", "(+ (* 1 2) 3)"},
         {"(1 + 2) * 3", "(* (+ 1 2) 3)"},
@@ -45,17 +44,14 @@ TEST_CASE("expr: precedence") {
         {"y AND x BETWEEN 1 AND 5", "(and (col y) (between (col x) 1 5))"},
         {"x BETWEEN a + 1 AND b * 2", "(between (col x) (+ (col a) 1) (* (col b) 2))"},
         {"x NOT BETWEEN 1 AND 5", "(not-between (col x) 1 5)"},
-        // IN
         {"x IN (1, 2, 3)", "(in (col x) 1 2 3)"},
         {"x IN (1)", "(in (col x) 1)"},
         {"x NOT IN (1 + 1, 'a')", "(not-in (col x) (+ 1 1) 'a')"},
         {"x IN (1) OR y", "(or (in (col x) 1) (col y))"},
-        // IS NULL
         {"a IS NULL", "(is-null (col a))"},
         {"a IS NOT NULL", "(is-not-null (col a))"},
         {"a IS NULL AND b IS NOT NULL", "(and (is-null (col a)) (is-not-null (col b)))"},
         {"NOT a IS NULL", "(not (is-null (col a)))"},
-        // literals and names
         {"42", "42"},
         {"3.5", "3.5"},
         {"'it''s'", "'it''s'"},

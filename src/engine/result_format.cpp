@@ -31,7 +31,6 @@ std::string format_result(const QueryResult& result) {
         std::string out;
         for (std::size_t i = 0; i < line.size(); ++i) {
             if (i > 0) out += " | ";
-            // The last column needs no padding.
             out += i + 1 < line.size() ? pad(line[i], widths[i]) : line[i];
         }
         return out;

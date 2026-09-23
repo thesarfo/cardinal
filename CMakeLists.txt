@@ -35,6 +35,7 @@ add_library(cardinal_core
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp
+  src/optimizer/boolean_cleanup.cpp
   src/optimizer/constant_folding.cpp
   src/optimizer/expr_rule.cpp
   src/optimizer/rule_optimizer.cpp

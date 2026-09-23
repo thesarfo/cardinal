@@ -56,6 +56,13 @@ inline RuleOptimizer optimizer_of(std::unique_ptr<Rule> rule) {
     return RuleOptimizer(std::move(rules));
 }
 
+template <class... Rules>
+RuleOptimizer optimizer_of_all() {
+    std::vector<std::unique_ptr<Rule>> rules;
+    (rules.push_back(std::make_unique<Rules>()), ...);
+    return RuleOptimizer(std::move(rules));
+}
+
 // Runs `rule` alone on the plan for `before_sql` and checks the result prints as
 // `expected_plan`. Then runs it again and checks that changes nothing: a rule that
 // keeps firing on its own output is a bug.

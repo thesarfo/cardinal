@@ -52,6 +52,10 @@ struct BoundExpr {
     std::optional<Type> type;
 };
 
+// True if the two trees have the same shape, operators, columns and literal values.
+// Types are not compared. `Int 1` and `Double 1.0` are different literals.
+bool expr_equal(const BoundExpr& a, const BoundExpr& b);
+
 // Bracket form with columns as #id, e.g. (and (>= #2 1) (<= #2 5)).
 std::string print(const BoundExpr& expr);
 
