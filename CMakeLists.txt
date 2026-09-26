@@ -38,6 +38,7 @@ add_library(cardinal_core
   src/optimizer/boolean_cleanup.cpp
   src/optimizer/constant_folding.cpp
   src/optimizer/expr_rule.cpp
+  src/optimizer/filter_cleanup.cpp
   src/optimizer/rule_optimizer.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp

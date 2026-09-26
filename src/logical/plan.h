@@ -21,6 +21,11 @@ struct LogicalScan {
     std::string alias;
     std::vector<ColumnId> columns;
 };
+// No rows at all, without reading anything. `columns` are the ids the step it replaced
+// would have produced, so the steps above can still find their columns.
+struct LogicalEmpty {
+    std::vector<ColumnId> columns;
+};
 // Rows for which the predicate is true. NULL and false are dropped.
 struct LogicalFilter {
     PlanPtr input;
@@ -49,7 +54,7 @@ struct LogicalLimit {
 };
 
 struct LogicalPlan {
-    std::variant<LogicalScan, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit> node;
+    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit> node;
 };
 
 }  // namespace cardinal

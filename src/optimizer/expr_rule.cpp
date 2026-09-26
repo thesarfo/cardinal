@@ -29,6 +29,7 @@ std::optional<PlanPtr> rewrite_expressions(const PlanPtr& node, const ExprRewrit
     PlanPtr result = std::visit(
         Overloaded{
             [&](const LogicalScan&) { return node; },
+            [&](const LogicalEmpty&) { return node; },
             [&](const LogicalFilter& n) {
                 BoundExprPtr predicate = apply(n.predicate);
                 return changed ? make(LogicalFilter{n.input, predicate}) : node;

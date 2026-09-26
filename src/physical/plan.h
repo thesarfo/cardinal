@@ -20,6 +20,7 @@ using PhysicalPtr = std::shared_ptr<const PhysicalPlan>;
 struct PhysicalSeqScan {
     std::string table;
 };
+struct PhysicalEmpty {};
 struct PhysicalFilter {
     PhysicalPtr input;
     BoundExprPtr predicate;
@@ -38,7 +39,7 @@ struct PhysicalLimit {
 };
 
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit> node;
+    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit> node;
 };
 
 }  // namespace cardinal

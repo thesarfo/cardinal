@@ -62,6 +62,7 @@ Planned plan_node(const LogicalPlan& plan) {
             [&](const LogicalScan& n) {
                 return Planned{make(PhysicalSeqScan{n.table}), n.columns};
             },
+            [&](const LogicalEmpty& n) { return Planned{make(PhysicalEmpty{}), n.columns}; },
             [&](const LogicalFilter& n) {
                 Planned in = plan_node(*n.input);
                 return Planned{make(PhysicalFilter{in.plan, to_positions(n.predicate, in.layout)}),

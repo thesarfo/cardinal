@@ -18,6 +18,7 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
     std::string line = std::visit(
         Overloaded{
             [&](const PhysicalSeqScan& n) { return "SeqScan[" + n.table + "]"; },
+            [&](const PhysicalEmpty&) { return std::string("Empty"); },
             [&](const PhysicalFilter& n) {
                 input = n.input.get();
                 return "Filter[" + format(*n.predicate, position) + "]";

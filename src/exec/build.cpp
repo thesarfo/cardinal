@@ -1,6 +1,7 @@
 #include "exec/build.h"
 
 #include "common/error.h"
+#include "exec/empty.h"
 #include "exec/filter.h"
 #include "exec/limit.h"
 #include "exec/project.h"
@@ -26,6 +27,7 @@ std::unique_ptr<Operator> build_operator(const PhysicalPlan& plan, const Catalog
                 if (!table) throw DbError("unknown table " + n.table);
                 return std::make_unique<SeqScan>(*table);
             },
+            [&](const PhysicalEmpty&) -> std::unique_ptr<Operator> { return std::make_unique<Empty>(); },
             [&](const PhysicalFilter& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<Filter>(build_operator(*n.input, catalog), n.predicate);
             },

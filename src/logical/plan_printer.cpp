@@ -19,6 +19,7 @@ void write(const LogicalPlan& plan, const Scope& scope, int depth, std::string& 
             [&](const LogicalScan& n) {
                 return "Scan[" + n.table + (n.alias == n.table ? "" : " AS " + n.alias) + "]";
             },
+            [&](const LogicalEmpty&) { return std::string("Empty"); },
             [&](const LogicalFilter& n) {
                 input = n.input.get();
                 return "Filter[" + format(*n.predicate, scope) + "]";
