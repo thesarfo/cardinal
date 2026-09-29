@@ -15,7 +15,8 @@
 //   1                      <- expected values, one per line, row by row
 //   foo                       NULL shows as NULL, empty text as (empty)
 //
-// Records are separated by blank lines. Usage: cardinal_slt file.test...
+// Records are separated by blank lines. Usage: cardinal_slt [--no-optimizer] file.test...
+// Every file must pass with the optimizer on and with it off.
 
 #include <algorithm>
 #include <cstdio>
@@ -223,17 +224,23 @@ struct Runner {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "usage: cardinal_slt file.test...\n";
+        std::cerr << "usage: cardinal_slt [--no-optimizer] file.test...\n";
         return 2;
     }
     int failed = 0;
+    bool optimizer = true;
     for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--no-optimizer") {
+            optimizer = false;
+            continue;
+        }
         std::ifstream in(argv[i]);
         if (!in) {
             std::cerr << "cannot open " << argv[i] << "\n";
             return 2;
         }
         Runner runner;
+        runner.db.set_optimizer_enabled(optimizer);
         runner.file = argv[i];
         for (std::string line; std::getline(in, line);) runner.lines.push_back(line);
         runner.run();

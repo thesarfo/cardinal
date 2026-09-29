@@ -6,6 +6,8 @@
 
 #include "catalog/catalog.h"
 #include "common/value.h"
+#include "optimizer/default_rules.h"
+#include "optimizer/rule_optimizer.h"
 
 namespace cardinal {
 
@@ -29,8 +31,14 @@ public:
 
     const Catalog& catalog() const { return catalog_; }
 
+    // On by default. Turning it off runs plans exactly as the query was written, which
+    // is how tests check that the optimizer never changes an answer.
+    void set_optimizer_enabled(bool enabled) { optimize_ = enabled; }
+
 private:
     Catalog catalog_;
+    RuleOptimizer optimizer_{default_rules()};
+    bool optimize_ = true;
 };
 
 }  // namespace cardinal

@@ -2,6 +2,7 @@
 
 #include "binder/binder.h"
 #include "common/error.h"
+#include "engine/explain.h"
 #include "exec/build.h"
 #include "expr/evaluator.h"
 #include "logical/planner.h"
@@ -37,9 +38,11 @@ QueryResult insert(Catalog& catalog, const Insert& stmt) {
     return {{}, {}, "INSERT " + std::to_string(count)};
 }
 
-QueryResult select(const Catalog& catalog, const Select& stmt) {
+QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize, const Select& stmt) {
     BoundSelect bound = bind_select(stmt, catalog);
-    PhysicalPtr plan = plan_physical(*plan_select(bound));
+    PlanPtr logical = plan_select(bound);
+    if (optimize) logical = optimizer.optimize(logical).plan;
+    PhysicalPtr plan = plan_physical(*logical);
     std::unique_ptr<Operator> root = build_operator(*plan, catalog);
 
     QueryResult result;
@@ -54,8 +57,14 @@ QueryResult Database::execute(std::string_view sql) {
     Statement statement = parse_statement(sql);
     if (const auto* s = std::get_if<CreateTable>(&statement.node)) return create_table(catalog_, *s);
     if (const auto* s = std::get_if<Insert>(&statement.node)) return insert(catalog_, *s);
-    if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, *s);
-    throw DbError("EXPLAIN is not supported yet");
+    if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, *s);
+
+    const auto& inner = std::get<Explain>(statement.node).inner->node;
+    const auto* select_stmt = std::get_if<Select>(&inner);
+    if (!select_stmt) throw DbError("EXPLAIN only works on SELECT");
+    BoundSelect bound = bind_select(*select_stmt, catalog_);
+    PlanPtr original = plan_select(bound);
+    return {{}, {}, format_explain(original, optimizer_.optimize(original), bound.scope)};
 }
 
 }  // namespace cardinal

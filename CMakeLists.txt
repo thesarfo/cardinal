@@ -20,6 +20,7 @@ add_library(cardinal_core
   src/common/value.cpp
   src/common/version.cpp
   src/engine/database.cpp
+  src/engine/explain.cpp
   src/engine/result_format.cpp
   src/exec/build.cpp
   src/exec/filter.cpp
@@ -37,6 +38,7 @@ add_library(cardinal_core
   src/sql/parser.cpp
   src/optimizer/boolean_cleanup.cpp
   src/optimizer/constant_folding.cpp
+  src/optimizer/default_rules.cpp
   src/optimizer/expr_rule.cpp
   src/optimizer/filter_cleanup.cpp
   src/optimizer/rule_optimizer.cpp

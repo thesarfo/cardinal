@@ -59,7 +59,8 @@ TEST_CASE("database: errors") {
     REQUIRE_THROWS_AS(db.execute("INSERT INTO nope VALUES (1)"), DbError);
     REQUIRE_THROWS_AS(db.execute("CREATE TABLE t (a INT)"), DbError);
     REQUIRE_THROWS_AS(db.execute("INSERT INTO t VALUES (a)"), DbError);  // no columns to read
-    REQUIRE_THROWS_AS(db.execute("EXPLAIN SELECT * FROM t"), DbError);
+    REQUIRE_THROWS_AS(db.execute("EXPLAIN SELECT * FROM nope"), DbError);
+    REQUIRE_THROWS_AS(db.execute("EXPLAIN CREATE TABLE u (a INT)"), DbError);
 }
 
 TEST_CASE("database: a runtime error comes out of the query") {
