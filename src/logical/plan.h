@@ -21,6 +21,8 @@ struct LogicalScan {
     std::string alias;
     std::vector<ColumnId> columns;
 };
+enum class JoinType { Inner, Cross };
+
 // No rows at all, without reading anything. `columns` are the ids the step it replaced
 // would have produced, so the steps above can still find their columns.
 struct LogicalEmpty {
@@ -52,9 +54,17 @@ struct LogicalLimit {
     PlanPtr input;
     std::int64_t count;
 };
+// Every pairing of a left row and a right row for which the condition is true. A Cross
+// join has no condition and keeps every pairing. Its rows are the left row's values
+// followed by the right row's.
+struct LogicalJoin {
+    PlanPtr left, right;
+    JoinType type;
+    BoundExprPtr condition;  // null for Cross
+};
 
 struct LogicalPlan {
-    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit> node;
+    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit, LogicalJoin> node;
 };
 
 }  // namespace cardinal

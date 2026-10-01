@@ -174,11 +174,25 @@ BoundExprPtr bind_expression(const Expr& expr, const Scope& scope) {
 }
 
 BoundSelect bind_select(const Select& select, const Catalog& catalog) {
-    const Table* table = catalog.get_table(select.from);
-    if (!table) throw DbError("unknown table " + select.from);
-
     BoundSelect bound;
-    bound.scope.add(select.from, table->info());
+    auto add_table = [&](const TableRef& ref) {
+        const Table* table = catalog.get_table(ref.table);
+        if (!table) throw DbError("unknown table " + ref.table);
+        bound.scope.add(ref.alias.value_or(ref.table), table->info());
+    };
+    add_table(select.from);
+    for (const JoinClause& join : select.joins) add_table(join.table);
+
+    for (std::size_t i = 0; i < select.joins.size(); ++i) {
+        const JoinClause& join = select.joins[i];
+        BoundJoin bound_join;
+        if (join.on) {
+            bound_join.condition = bind_expression(*join.on, bound.scope.prefix(i + 2));
+            if (!is_bool(bound_join.condition->type))
+                throw DbError("ON needs a true/false value, got " + label(bound_join.condition->type));
+        }
+        bound.joins.push_back(std::move(bound_join));
+    }
     ExprBinder binder(bound.scope);
 
     for (const SelectItem& item : select.items) {

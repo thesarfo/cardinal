@@ -115,6 +115,18 @@ private:
         return t.text;
     }
 
+    TableRef table_ref() {
+        TableRef ref;
+        ref.table = name("a table name");
+        // `users u` and `users AS u`. A keyword can't be an alias, so WHERE, JOIN... end the table.
+        if (match(TokenKind::As)) {
+            ref.alias = name("an alias after AS");
+        } else if (peek().kind == TokenKind::Identifier) {
+            ref.alias = advance().text;
+        }
+        return ref;
+    }
+
     Type column_type() {
         const Token& t = advance();
         switch (t.kind) {
@@ -169,7 +181,20 @@ private:
             } while (match(TokenKind::Comma));
         }
         expect(TokenKind::From);
-        sel.from = name("a table name");
+        sel.from = table_ref();
+        for (;;) {
+            if (match(TokenKind::Comma)) {
+                sel.joins.push_back({table_ref(), nullptr});
+            } else if (peek().kind == TokenKind::Join || peek().kind == TokenKind::Inner) {
+                if (match(TokenKind::Inner)) expect(TokenKind::Join);
+                else advance();
+                TableRef table = table_ref();
+                expect(TokenKind::On);
+                sel.joins.push_back({std::move(table), expression(kOr)});
+            } else {
+                break;
+            }
+        }
         if (match(TokenKind::Where)) sel.where = expression(kOr);
         if (match(TokenKind::Order)) {
             expect(TokenKind::By);

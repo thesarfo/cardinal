@@ -32,6 +32,10 @@ public:
     // for a bare name, matches more than one table.
     ColumnId resolve(const std::optional<std::string>& table, const std::string& name) const;
 
+    // The first `count` tables only, with the same ids. A JOIN's ON clause may refer to
+    // the tables up to and including its own, not to ones that come later.
+    Scope prefix(std::size_t count) const;
+
     const std::vector<BoundTable>& tables() const { return tables_; }
     // Indexed by ColumnId::value.
     const std::vector<ColumnMeta>& columns() const { return columns_; }

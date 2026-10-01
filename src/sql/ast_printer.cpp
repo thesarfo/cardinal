@@ -57,6 +57,10 @@ std::string format_literal(const Value& v) {
 
 namespace {
 
+std::string table_text(const TableRef& ref) {
+    return ref.table + (ref.alias ? " " + *ref.alias : "");
+}
+
 std::string join_exprs(const std::vector<ExprPtr>& exprs) {
     std::string out;
     for (const ExprPtr& e : exprs) out += " " + print(*e);
@@ -117,7 +121,11 @@ std::string print(const Statement& statement) {
                                ? "(star)"
                                : print(*std::get<ExprPtr>(item.item));
                 }
-                out += " (from " + n.from + ")";
+                out += " (from " + table_text(n.from) + ")";
+                for (const JoinClause& join : n.joins) {
+                    out += join.on ? " (inner-join " + table_text(join.table) + " (on " + print(*join.on) + "))"
+                                   : " (cross-join " + table_text(join.table) + ")";
+                }
                 if (n.where) out += " (where " + print(*n.where) + ")";
                 if (!n.order_by.empty()) {
                     out += " (order-by";

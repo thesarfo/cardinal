@@ -58,7 +58,7 @@ TEST_CASE("print: is null, between, in") {
 TEST_CASE("print: select") {
     Select sel;
     sel.items.push_back({col("name")});
-    sel.from = "users";
+    sel.from.table = "users";
     sel.where = binary(BinaryOp::Gt, col("age"), lit(i(25)));
     Statement st{std::move(sel)};
     REQUIRE(print(st) == "(select (col name) (from users) (where (> (col age) 25)))");
@@ -67,7 +67,7 @@ TEST_CASE("print: select") {
 TEST_CASE("print: select with everything") {
     Select sel;
     sel.items.push_back({Star{}});
-    sel.from = "t";
+    sel.from.table = "t";
     sel.order_by.push_back({col("a"), true});
     sel.order_by.push_back({col("b"), false});
     sel.limit = 5;
@@ -90,7 +90,7 @@ TEST_CASE("print: insert") {
 TEST_CASE("print: explain") {
     Select sel;
     sel.items.push_back({Star{}});
-    sel.from = "t";
+    sel.from.table = "t";
     Explain ex{std::make_unique<Statement>(Statement{std::move(sel)})};
     REQUIRE(print(Statement{std::move(ex)}) == "(explain (select (star) (from t)))");
 }

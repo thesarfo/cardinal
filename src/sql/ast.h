@@ -91,9 +91,21 @@ struct OrderKey {
     ExprPtr expr;
     bool descending = false;
 };
+// A table in FROM, with the name it goes by in the query (its own name if no alias).
+struct TableRef {
+    std::string table;
+    std::optional<std::string> alias;
+};
+// `JOIN b ON cond` has a condition; `, b` does not.
+struct JoinClause {
+    TableRef table;
+    ExprPtr on;  // null for a comma join
+};
 struct Select {
     std::vector<SelectItem> items;
-    std::string from;
+    // FROM a JOIN b ON ..., c  is read left to right: ((a JOIN b) , c).
+    TableRef from;
+    std::vector<JoinClause> joins;
     ExprPtr where;  // null when there is no WHERE
     std::vector<OrderKey> order_by;
     std::optional<std::int64_t> limit;

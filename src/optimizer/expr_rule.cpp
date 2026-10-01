@@ -45,6 +45,11 @@ std::optional<PlanPtr> rewrite_expressions(const PlanPtr& node, const ExprRewrit
                 return changed ? make(LogicalSort{n.input, std::move(keys)}) : node;
             },
             [&](const LogicalLimit&) { return node; },
+            [&](const LogicalJoin& n) {
+                if (!n.condition) return node;
+                BoundExprPtr condition = apply(n.condition);
+                return changed ? make(LogicalJoin{n.left, n.right, n.type, condition}) : node;
+            },
         },
         node->node);
 

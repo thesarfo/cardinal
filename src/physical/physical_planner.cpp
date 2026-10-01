@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "common/error.h"
+
 namespace cardinal {
 
 namespace {
@@ -63,6 +65,7 @@ Planned plan_node(const LogicalPlan& plan) {
                 return Planned{make(PhysicalSeqScan{n.table}), n.columns};
             },
             [&](const LogicalEmpty& n) { return Planned{make(PhysicalEmpty{}), n.columns}; },
+            [&](const LogicalJoin&) -> Planned { throw DbError("joins can't be run yet"); },
             [&](const LogicalFilter& n) {
                 Planned in = plan_node(*n.input);
                 return Planned{make(PhysicalFilter{in.plan, to_positions(n.predicate, in.layout)}),

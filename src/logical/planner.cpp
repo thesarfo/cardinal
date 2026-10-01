@@ -1,7 +1,5 @@
 #include "logical/planner.h"
 
-#include <cassert>
-
 namespace cardinal {
 
 namespace {
@@ -14,11 +12,15 @@ PlanPtr make(Node node) {
 }  // namespace
 
 PlanPtr plan_select(const BoundSelect& select) {
-    // The parser has no joins yet, so there is exactly one table.
-    assert(select.scope.tables().size() == 1);
-    const BoundTable& table = select.scope.tables().front();
+    auto scan = [&](const BoundTable& t) { return make(LogicalScan{t.info->name, t.alias, t.columns}); };
+    const std::vector<BoundTable>& tables = select.scope.tables();
 
-    PlanPtr plan = make(LogicalScan{table.info->name, table.alias, table.columns});
+    // Joins read left to right: ((t0 join t1) join t2) ...
+    PlanPtr plan = scan(tables.front());
+    for (std::size_t i = 0; i < select.joins.size(); ++i) {
+        const BoundExprPtr& condition = select.joins[i].condition;
+        plan = make(LogicalJoin{plan, scan(tables[i + 1]), condition ? JoinType::Inner : JoinType::Cross, condition});
+    }
     if (select.where) plan = make(LogicalFilter{plan, select.where});
 
     if (!select.order_by.empty()) {

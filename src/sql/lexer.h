@@ -9,7 +9,7 @@ namespace cardinal {
 enum class TokenKind {
     // Keywords
     Create, Table, Insert, Into, Values, Select, From, Where, Order, By, Asc, Desc,
-    Limit, Explain, And, Or, Not, Is, Null, Between, In, True, False,
+    Limit, Explain, And, Or, Not, Is, Null, Between, In, True, False, Join, Inner, On, As,
     IntType, DoubleType, TextType, BoolType,
     // Names and literals
     Identifier, Integer, Decimal, String,

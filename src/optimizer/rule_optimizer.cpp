@@ -11,10 +11,16 @@ namespace {
 // "same pointer" means "nothing changed".
 PlanPtr rewrite(const Rule& rule, const PlanPtr& node) {
     PlanPtr current = node;
-    if (PlanPtr input = input_of(*node)) {
-        PlanPtr new_input = rewrite(rule, input);
-        if (new_input != input) current = with_input(*node, new_input);
+    std::vector<PlanPtr> children = children_of(*node);
+    bool child_changed = false;
+    for (PlanPtr& child : children) {
+        PlanPtr rewritten = rewrite(rule, child);
+        if (rewritten != child) {
+            child = std::move(rewritten);
+            child_changed = true;
+        }
     }
+    if (child_changed) current = with_children(*node, std::move(children));
     if (std::optional<PlanPtr> replaced = rule.apply(current)) {
         if (*replaced != current) return *replaced;
     }

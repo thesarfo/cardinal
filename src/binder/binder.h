@@ -15,6 +15,10 @@ struct BoundSelectItem {
     BoundExprPtr expr;
     std::string name;  // what the result column is called
 };
+// One entry of FROM after the first table. Join i brings in scope.tables()[i + 1].
+struct BoundJoin {
+    BoundExprPtr condition;  // null for a comma join
+};
 struct BoundOrderKey {
     BoundExprPtr expr;
     bool descending;
@@ -23,7 +27,8 @@ struct BoundOrderKey {
 // A SELECT with every name resolved. Expressions hold ColumnIds, never names.
 // `scope` keeps the id -> table and column table for printing and planning.
 struct BoundSelect {
-    Scope scope;
+    Scope scope;                    // every table in FROM, in order
+    std::vector<BoundJoin> joins;   // joins[i] adds scope.tables()[i + 1]
     std::vector<BoundSelectItem> items;  // `*` already expanded
     BoundExprPtr where;                  // null when there is no WHERE
     std::vector<BoundOrderKey> order_by;

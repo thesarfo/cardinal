@@ -19,7 +19,7 @@
 
 namespace cardinal::testing {
 
-// t(a INT, b INT, x DOUBLE, name TEXT, flag BOOL), and users(id INT, name TEXT, age INT).
+// t(a INT, b INT, x DOUBLE, name TEXT, flag BOOL), users(id, name, age), orders(id, user_id, amount) and items(id, order_id, sku).
 inline const Catalog& test_catalog() {
     static const Catalog catalog = [] {
         Catalog c;
@@ -30,6 +30,8 @@ inline const Catalog& test_catalog() {
                          {"name", Type::Text},
                          {"flag", Type::Bool}}});
         c.create_table({"users", {{"id", Type::Int}, {"name", Type::Text}, {"age", Type::Int}}});
+        c.create_table({"orders", {{"id", Type::Int}, {"user_id", Type::Int}, {"amount", Type::Double}}});
+        c.create_table({"items", {{"id", Type::Int}, {"order_id", Type::Int}, {"sku", Type::Text}}});
         return c;
     }();
     return catalog;

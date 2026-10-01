@@ -16,6 +16,15 @@ void Scope::add(std::string alias, const TableInfo& info) {
     tables_.push_back(std::move(table));
 }
 
+Scope Scope::prefix(std::size_t count) const {
+    Scope out;
+    out.tables_.assign(tables_.begin(), tables_.begin() + static_cast<std::ptrdiff_t>(count));
+    std::size_t columns = 0;
+    for (const BoundTable& t : out.tables_) columns += t.columns.size();
+    out.columns_.assign(columns_.begin(), columns_.begin() + static_cast<std::ptrdiff_t>(columns));
+    return out;
+}
+
 ColumnId Scope::resolve(const std::optional<std::string>& table, const std::string& name) const {
     if (table) {
         for (const BoundTable& t : tables_) {
