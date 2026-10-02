@@ -12,6 +12,9 @@ namespace cardinal {
 // the guessed row counts against the real ones.
 struct ExecStats {
     std::uint64_t rows_out = 0;
+    // Rows (or row pairs) the operator had to test to decide what to pass on, repeats
+    // counted. Only joins set it so far: a nested loop join over 3 and 4 rows tests 12.
+    std::uint64_t rows_scanned = 0;
     // Time spent inside next(), counting the operators below it.
     std::chrono::nanoseconds time{0};
 };
@@ -30,6 +33,8 @@ public:
     const ExecStats& stats() const { return stats_; }
 
 protected:
+    void count_scanned(std::uint64_t n = 1) { stats_.rows_scanned += n; }
+
     // Each operator's real work. Not called again after it returns nothing.
     virtual std::optional<Row> produce() = 0;
 

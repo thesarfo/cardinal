@@ -1,0 +1,161 @@
+# Joins: users and orders, with a user who has no orders and an order with no user.
+
+statement ok
+CREATE TABLE users (id INT, name TEXT, age INT)
+
+statement ok
+CREATE TABLE orders (id INT, user_id INT, amount DOUBLE)
+
+statement ok
+INSERT INTO users VALUES (1, 'ama', 30), (2, 'kofi', 20), (3, 'esi', 41)
+
+statement ok
+INSERT INTO orders VALUES (10, 1, 5.0), (11, 1, 7.5), (12, 3, 2.0), (13, NULL, 1.0)
+
+query TI rowsort
+SELECT u.name, o.id FROM users u JOIN orders o ON u.id = o.user_id
+----
+ama
+10
+ama
+11
+esi
+12
+
+# INNER JOIN and plain JOIN are the same thing.
+query TI rowsort
+SELECT u.name, o.id FROM users u INNER JOIN orders o ON u.id = o.user_id
+----
+ama
+10
+ama
+11
+esi
+12
+
+# The AS keyword is optional.
+query TI rowsort
+SELECT u.name, o.id FROM users AS u JOIN orders AS o ON u.id = o.user_id
+----
+ama
+10
+ama
+11
+esi
+12
+
+# A comma join with the condition in WHERE gives the same rows.
+query TI rowsort
+SELECT u.name, o.id FROM users u, orders o WHERE u.id = o.user_id
+----
+ama
+10
+ama
+11
+esi
+12
+
+query T rowsort
+SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE o.amount > 3
+----
+ama
+ama
+
+# Without a condition, every row meets every row: 3 x 4.
+query I
+SELECT u.id FROM users u, orders o WHERE o.id = 12
+----
+1
+2
+3
+
+query II nosort
+SELECT u.id, o.id FROM users u, orders o WHERE u.id = 2
+----
+2
+10
+2
+11
+2
+12
+2
+13
+
+# A user with no orders, and an order with no user, appear in no pair.
+query T
+SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.name = 'kofi'
+----
+
+query I
+SELECT o.id FROM users u JOIN orders o ON u.id = o.user_id WHERE o.id = 13
+----
+
+# The condition can use only one side, or be anything at all.
+query II rowsort
+SELECT u.id, o.id FROM users u JOIN orders o ON o.amount > 5
+----
+1
+11
+2
+11
+3
+11
+
+query I
+SELECT u.id FROM users u JOIN orders o ON FALSE
+----
+
+query T nosort
+SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id ORDER BY o.amount DESC LIMIT 2
+----
+ama
+ama
+
+# Select star: the left table's columns, then the right's.
+query ITIIIR
+SELECT * FROM users u JOIN orders o ON u.id = o.user_id WHERE o.id = 12
+----
+3
+esi
+41
+12
+3
+2.000
+
+# A join with an empty table.
+statement ok
+CREATE TABLE nobody (id INT)
+
+query I
+SELECT u.id FROM users u JOIN nobody n ON u.id = n.id
+----
+
+query I
+SELECT u.id FROM users u, nobody n
+----
+
+# Mistakes.
+statement error
+SELECT id FROM users u JOIN orders o ON u.id = o.user_id
+----
+ambiguous
+
+statement error
+SELECT * FROM users JOIN users ON users.id = users.id
+----
+used twice
+
+statement error
+SELECT * FROM users u JOIN orders o ON u.id
+----
+ON needs a true/false value
+
+statement error
+SELECT * FROM users u JOIN nope n ON u.id = n.id
+----
+unknown table nope
+
+statement error
+SELECT * FROM users u JOIN orders o
+----
+expected 'ON'

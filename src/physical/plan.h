@@ -29,6 +29,13 @@ struct PhysicalProject {
     PhysicalPtr input;
     std::vector<ProjectItem> items;
 };
+// For each left row, tests every right row (the right input is read once and kept), and
+// passes on left-plus-right rows for which the condition is true. Column ids in the
+// condition are positions in that combined row. No condition keeps every pairing.
+struct PhysicalNestedLoopJoin {
+    PhysicalPtr left, right;
+    BoundExprPtr condition;  // null for a cross join
+};
 struct PhysicalSort {
     PhysicalPtr input;
     std::vector<SortKey> keys;
@@ -39,7 +46,7 @@ struct PhysicalLimit {
 };
 
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit> node;
+    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin> node;
 };
 
 }  // namespace cardinal

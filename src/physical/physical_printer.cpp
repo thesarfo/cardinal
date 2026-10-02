@@ -14,24 +14,29 @@ struct Overloaded : Ts... {
 std::string position(ColumnId id) { return "#" + std::to_string(id.value); }
 
 void write(const PhysicalPlan& plan, int depth, std::string& out) {
-    const PhysicalPlan* input = nullptr;
+    std::vector<const PhysicalPlan*> children;
     std::string line = std::visit(
         Overloaded{
             [&](const PhysicalSeqScan& n) { return "SeqScan[" + n.table + "]"; },
             [&](const PhysicalEmpty&) { return std::string("Empty"); },
+            [&](const PhysicalNestedLoopJoin& n) {
+                children = {n.left.get(), n.right.get()};
+                return n.condition ? "NestedLoopJoin[" + format(*n.condition, position) + "]"
+                                   : std::string("NestedLoopJoin[CROSS]");
+            },
             [&](const PhysicalFilter& n) {
-                input = n.input.get();
+                children = {n.input.get()};
                 return "Filter[" + format(*n.predicate, position) + "]";
             },
             [&](const PhysicalProject& n) {
-                input = n.input.get();
+                children = {n.input.get()};
                 std::string items;
                 for (const ProjectItem& item : n.items)
                     items += (items.empty() ? "" : ", ") + format(*item.expr, position);
                 return "Project[" + items + "]";
             },
             [&](const PhysicalSort& n) {
-                input = n.input.get();
+                children = {n.input.get()};
                 std::string keys;
                 for (const SortKey& key : n.keys)
                     keys += (keys.empty() ? "" : ", ") + format(*key.expr, position) +
@@ -39,15 +44,15 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
                 return "Sort[" + keys + "]";
             },
             [&](const PhysicalLimit& n) {
-                input = n.input.get();
+                children = {n.input.get()};
                 return "Limit[" + std::to_string(n.count) + "]";
             },
         },
         plan.node);
     out += std::string(static_cast<std::size_t>(depth) * 2, ' ') + line;
-    if (input) {
+    for (const PhysicalPlan* child : children) {
         out += "\n";
-        write(*input, depth + 1, out);
+        write(*child, depth + 1, out);
     }
 }
 

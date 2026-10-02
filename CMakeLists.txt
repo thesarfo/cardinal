@@ -25,6 +25,7 @@ add_library(cardinal_core
   src/exec/build.cpp
   src/exec/filter.cpp
   src/exec/limit.cpp
+  src/exec/nested_loop_join.cpp
   src/exec/operator.cpp
   src/exec/project.cpp
   src/exec/seq_scan.cpp

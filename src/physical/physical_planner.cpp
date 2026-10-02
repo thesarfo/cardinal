@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include "common/error.h"
 
 namespace cardinal {
 
@@ -65,7 +64,14 @@ Planned plan_node(const LogicalPlan& plan) {
                 return Planned{make(PhysicalSeqScan{n.table}), n.columns};
             },
             [&](const LogicalEmpty& n) { return Planned{make(PhysicalEmpty{}), n.columns}; },
-            [&](const LogicalJoin&) -> Planned { throw DbError("joins can't be run yet"); },
+            [&](const LogicalJoin& n) {
+                Planned left = plan_node(*n.left);
+                Planned right = plan_node(*n.right);
+                Layout layout = left.layout;
+                layout.insert(layout.end(), right.layout.begin(), right.layout.end());
+                BoundExprPtr condition = n.condition ? to_positions(n.condition, layout) : nullptr;
+                return Planned{make(PhysicalNestedLoopJoin{left.plan, right.plan, condition}), layout};
+            },
             [&](const LogicalFilter& n) {
                 Planned in = plan_node(*n.input);
                 return Planned{make(PhysicalFilter{in.plan, to_positions(n.predicate, in.layout)}),
