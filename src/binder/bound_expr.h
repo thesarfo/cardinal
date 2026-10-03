@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <variant>
 
@@ -51,6 +52,9 @@ struct BoundExpr {
     // Empty only for a bare NULL, which fits any type.
     std::optional<Type> type;
 };
+
+// Every column the expression reads.
+std::set<ColumnId> columns_used(const BoundExpr& expr);
 
 // True if the two trees have the same shape, operators, columns and literal values.
 // Types are not compared. `Int 1` and `Double 1.0` are different literals.

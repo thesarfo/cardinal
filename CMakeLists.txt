@@ -42,6 +42,7 @@ add_library(cardinal_core
   src/optimizer/default_rules.cpp
   src/optimizer/expr_rule.cpp
   src/optimizer/filter_cleanup.cpp
+  src/optimizer/filter_pushdown.cpp
   src/optimizer/rule_optimizer.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp

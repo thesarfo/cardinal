@@ -13,6 +13,23 @@ struct Overloaded : Ts... {
 
 }  // namespace
 
+std::set<ColumnId> columns_used(const BoundExpr& expr) {
+    return std::visit(
+        Overloaded{
+            [](const BoundLiteral&) { return std::set<ColumnId>{}; },
+            [](const BoundColumn& n) { return std::set<ColumnId>{n.id}; },
+            [](const BoundUnary& n) { return columns_used(*n.operand); },
+            [](const BoundBinary& n) {
+                std::set<ColumnId> out = columns_used(*n.left);
+                std::set<ColumnId> right = columns_used(*n.right);
+                out.insert(right.begin(), right.end());
+                return out;
+            },
+            [](const BoundIsNull& n) { return columns_used(*n.operand); },
+        },
+        expr.node);
+}
+
 bool expr_equal(const BoundExpr& a, const BoundExpr& b) {
     if (&a == &b) return true;
     if (a.node.index() != b.node.index()) return false;
