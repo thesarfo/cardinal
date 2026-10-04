@@ -20,6 +20,8 @@ public:
     Sort(std::unique_ptr<Operator> input, std::vector<SortKey> keys)
         : input_(std::move(input)), keys_(std::move(keys)) {}
 
+    std::vector<const Operator*> children() const override { return {input_.get()}; }
+
 protected:
     std::optional<Row> produce() override;
 

@@ -21,6 +21,8 @@ public:
     NestedLoopJoin(std::unique_ptr<Operator> left, std::unique_ptr<Operator> right, BoundExprPtr condition)
         : left_(std::move(left)), right_(std::move(right)), condition_(std::move(condition)) {}
 
+    std::vector<const Operator*> children() const override { return {left_.get(), right_.get()}; }
+
 protected:
     std::optional<Row> produce() override;
 

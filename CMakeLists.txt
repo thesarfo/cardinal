@@ -21,6 +21,7 @@ add_library(cardinal_core
   src/common/version.cpp
   src/engine/answer_checker.cpp
   src/engine/database.cpp
+  src/engine/datagen.cpp
   src/engine/explain.cpp
   src/engine/fuzz.cpp
   src/engine/result_format.cpp
@@ -62,3 +63,5 @@ target_link_libraries(cardinal PRIVATE cardinal_core)
 
 enable_testing()
 add_subdirectory(tests)
+
+add_subdirectory(bench)

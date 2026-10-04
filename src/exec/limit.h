@@ -15,6 +15,8 @@ public:
     Limit(std::unique_ptr<Operator> input, std::int64_t count)
         : input_(std::move(input)), remaining_(count) {}
 
+    std::vector<const Operator*> children() const override { return {input_.get()}; }
+
 protected:
     std::optional<Row> produce() override;
 

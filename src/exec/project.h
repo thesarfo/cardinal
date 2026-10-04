@@ -15,6 +15,8 @@ public:
     Project(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> exprs)
         : input_(std::move(input)), exprs_(std::move(exprs)) {}
 
+    std::vector<const Operator*> children() const override { return {input_.get()}; }
+
 protected:
     std::optional<Row> produce() override;
 

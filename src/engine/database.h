@@ -13,12 +13,23 @@
 
 namespace cardinal {
 
+// What running a SELECT cost. Filled in for SELECT only.
+struct QueryStats {
+    double plan_ms = 0;  // bind, plan, optimize and build the operators; parsing is not counted
+    double exec_ms = 0;  // pulling every row through the operators
+    // Rows every operator handed up, plus the row pairs joins tested: a measure of work
+    // that does not depend on the machine.
+    std::uint64_t rows_processed = 0;
+    std::string plan_hash;  // of the final physical plan; equal hashes mean equal plans
+};
+
 struct QueryResult {
     // Set for SELECT, with one name per output column (even when there are no rows).
     std::vector<std::string> columns;
     std::vector<Row> rows;
     // Set for statements that return no rows: "CREATE TABLE", "INSERT 3".
     std::string message;
+    QueryStats stats;
 
     bool returns_rows() const { return !columns.empty(); }
 };
@@ -37,6 +48,8 @@ public:
     QueryResult execute(const Statement& statement);
 
     const Catalog& catalog() const { return catalog_; }
+    // For loading data without going through SQL. Null if there is no such table.
+    Table* table(const std::string& name) { return catalog_.get_table(name); }
 
     // On by default. Turning it off runs plans exactly as the query was written, which
     // is how tests check that the optimizer never changes an answer.

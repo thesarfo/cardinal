@@ -27,7 +27,7 @@
       "name": "release",
       "inherits": "base",
       "displayName": "Release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "CMAKE_CXX_FLAGS_RELEASE": "-O2 -DNDEBUG" }
     }
   ],
   "buildPresets": [

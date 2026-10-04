@@ -101,29 +101,30 @@ public:
 private:
     int pick(int n) { return static_cast<int>(rng_() % static_cast<uint64_t>(n)); }
     bool chance(int percent) { return pick(100) < percent; }
-    template <class T>
-    const T& one_of(const std::vector<T>& items) { return items[static_cast<std::size_t>(pick(static_cast<int>(items.size())))]; }
+    std::string one_of(std::initializer_list<const char*> items) {
+        return *(items.begin() + pick(static_cast<int>(items.size())));
+    }
 
     std::string table_name() { return "t" + std::to_string(1 + pick(3)); }
-    std::string alias() { return one_of(aliases_); }
-    std::string int_column() { return alias() + "." + one_of<std::string>({"id", "a", "b"}); }
-    std::string any_column() { return alias() + "." + one_of<std::string>({"id", "a", "b", "c", "s", "f"}); }
-    std::string sortable_column() { return alias() + "." + one_of<std::string>({"id", "a", "b", "c", "s"}); }
+    std::string alias() { return aliases_[static_cast<std::size_t>(pick(static_cast<int>(aliases_.size())))]; }
+    std::string int_column() { return alias() + "." + one_of({"id", "a", "b"}); }
+    std::string any_column() { return alias() + "." + one_of({"id", "a", "b", "c", "s", "f"}); }
+    std::string sortable_column() { return alias() + "." + one_of({"id", "a", "b", "c", "s"}); }
     std::string small_int() { return std::to_string(pick(5)); }
-    std::string op() { return one_of<std::string>({"=", "<>", "<", "<=", ">", ">="}); }
+    std::string op() { return one_of({"=", "<>", "<", "<=", ">", ">="}); }
 
     // A number-valued expression: an INT or DOUBLE column, a literal, or a sum, difference or product.
     std::string numeric(int depth) {
         if (depth > 0 && chance(30)) {
             std::string a = numeric(depth - 1);
             std::string b = numeric(depth - 1);
-            return "(" + a + " " + one_of<std::string>({"+", "-", "*"}) + " " + b + ")";
+            return "(" + a + " " + one_of({"+", "-", "*"}) + " " + b + ")";
         }
         switch (pick(4)) {
             case 0: return int_column();
             case 1: return alias() + ".c";
             case 2: return small_int();
-            default: return one_of<std::string>({"0.5", "1.5", "2.5"});
+            default: return one_of({"0.5", "1.5", "2.5"});
         }
     }
 
@@ -132,7 +133,7 @@ private:
             case 0:
             case 1:
             case 2: return leaf(numeric(1) + " " + op() + " " + numeric(1));
-            case 3: return leaf(alias() + ".s " + op() + " " + one_of<std::string>({"'x'", "'y'", "'z'", "''"}));
+            case 3: return leaf(alias() + ".s " + op() + " " + one_of({"'x'", "'y'", "'z'", "''"}));
             case 4: return leaf(alias() + ".f");
             case 5: return leaf((chance(50) ? numeric(0) : alias() + ".s") + (chance(50) ? " IS NULL" : " IS NOT NULL"));
             case 6: return leaf(numeric(0) + (chance(30) ? " NOT" : "") + " BETWEEN " + small_int() + " AND " + small_int());
@@ -141,7 +142,17 @@ private:
                 for (int i = pick(3); i > 0; --i) list += ", " + small_int();
                 return leaf(numeric(0) + (chance(30) ? " NOT" : "") + " IN (" + list + ")");
             }
-            default: return leaf(one_of<std::string>({"TRUE", "FALSE", "NULL", alias() + ".f = TRUE", alias() + ".s = " + alias() + ".s"}));
+            default:
+                switch (pick(5)) {
+                    case 0: return leaf("TRUE");
+                    case 1: return leaf("FALSE");
+                    case 2: return leaf("NULL");
+                    case 3: return leaf(alias() + ".f = TRUE");
+                    default: {
+                        std::string a = alias();
+                        return leaf(a + ".s = " + a + ".s");
+                    }
+                }
         }
     }
 
@@ -158,7 +169,7 @@ private:
     BoolExpr join_condition() {
         const std::string& newest = aliases_.back();
         const std::string& older = aliases_[static_cast<std::size_t>(pick(static_cast<int>(aliases_.size()) - 1))];
-        auto col = [&] { return one_of<std::string>({"id", "a", "b"}); };
+        auto col = [&] { return one_of({"id", "a", "b"}); };
         BoolExpr base = leaf(newest + "." + col() + " " + (chance(75) ? "=" : op()) + " " + older + "." + col());
         if (chance(30)) return node(BoolExpr::Kind::And, {base, simple_condition()});
         return base;

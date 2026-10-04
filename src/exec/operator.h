@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "common/value.h"
 
@@ -31,6 +32,9 @@ public:
     std::optional<Row> next();
 
     const ExecStats& stats() const { return stats_; }
+
+    // The operators this one reads from, for adding up work across a whole tree.
+    virtual std::vector<const Operator*> children() const { return {}; }
 
 protected:
     void count_scanned(std::uint64_t n = 1) { stats_.rows_scanned += n; }

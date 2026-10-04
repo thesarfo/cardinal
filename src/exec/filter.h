@@ -14,6 +14,8 @@ public:
     Filter(std::unique_ptr<Operator> input, BoundExprPtr predicate)
         : input_(std::move(input)), predicate_(std::move(predicate)) {}
 
+    std::vector<const Operator*> children() const override { return {input_.get()}; }
+
 protected:
     std::optional<Row> produce() override;
 
