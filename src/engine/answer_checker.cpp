@@ -130,13 +130,23 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
     const Observation all_on = run(true, {});
     if (!(all_on == reference)) wrong.push_back({"all rules on", all_on});
 
-    std::vector<std::string> culprits;
-    for (const std::string& rule : db.rule_names()) {
+    std::vector<std::string> fixed_by_removing, wrong_alone;
+    const std::vector<std::string> rules = db.rule_names();
+    for (const std::string& rule : rules) {
         Observation without = run(true, {rule});
         if (!(without == reference)) {
             wrong.push_back({"all rules but " + rule, without});
         } else if (!(all_on == reference)) {
-            culprits.push_back(rule);
+            fixed_by_removing.push_back(rule);
+        }
+    }
+    for (const std::string& rule : rules) {
+        std::set<std::string> others(rules.begin(), rules.end());
+        others.erase(rule);
+        Observation alone = run(true, others);
+        if (!(alone == reference)) {
+            wrong.push_back({"only " + rule, alone});
+            wrong_alone.push_back(rule);
         }
     }
 
@@ -144,13 +154,19 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
 
     CheckOutcome outcome;
     outcome.ok = false;
-    outcome.culprits = culprits;
     outcome.detail = "different answers for: " + std::string(sql) + "\n  without the optimizer: " + describe(reference);
     for (const Setup& s : wrong) outcome.detail += "\n  " + s.name + ": " + describe(s.seen);
-    if (!culprits.empty()) {
-        outcome.detail += "\n  turning this off fixes it:";
-        for (const std::string& c : culprits) outcome.detail += " " + c;
-    }
+    auto note = [&](const char* label, const std::vector<std::string>& names) {
+        if (names.empty()) return;
+        outcome.detail += std::string("\n  ") + label + ":";
+        for (const std::string& n : names) {
+            outcome.detail += " " + n;
+            if (std::find(outcome.culprits.begin(), outcome.culprits.end(), n) == outcome.culprits.end())
+                outcome.culprits.push_back(n);
+        }
+    };
+    note("wrong on its own", wrong_alone);
+    note("turning this off fixes it", fixed_by_removing);
     return outcome;
 }
 

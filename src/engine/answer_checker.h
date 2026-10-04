@@ -13,14 +13,17 @@ struct CheckOutcome {
     // When not ok: the query, which setups gave a different answer, and what they gave.
     // When ok but nothing was compared: why not.
     std::string detail;
-    // Rules whose removal makes a wrong answer right: the likely cause.
+    // Rules that are the likely cause: wrong when they are the only rule on, or turning
+    // them off fixes an answer that was wrong.
     std::vector<std::string> culprits;
 };
 
 // Runs a SELECT every way the engine can run it and checks the answers agree:
 //   - with the optimizer off (the reference: the plan exactly as written),
-//   - with all rules on, and
-//   - with all rules on except one, for each rule in turn.
+//   - with all rules on,
+//   - with all rules on except one, for each rule in turn, and
+//   - with just one rule on, for each rule in turn.
+// The last two find a wrong rule even when another rule happens to hide its mistake.
 // The database's own settings are put back afterwards. Anything that is not a SELECT,
 // or a SELECT the reference run cannot finish (an error), is not compared.
 //

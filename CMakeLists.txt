@@ -22,6 +22,7 @@ add_library(cardinal_core
   src/engine/answer_checker.cpp
   src/engine/database.cpp
   src/engine/explain.cpp
+  src/engine/fuzz.cpp
   src/engine/result_format.cpp
   src/exec/build.cpp
   src/exec/filter.cpp
