@@ -17,6 +17,7 @@ constexpr double kDefaultEquality = 0.005;   // col = value
 constexpr double kDefaultRange = 1.0 / 3.0;  // col < value, and the like
 constexpr double kDefaultIsNull = 0.005;     // col IS NULL
 constexpr double kDefaultOther = 0.5;        // anything we can't read at all
+constexpr std::int64_t kDefaultDistinct = 200;  // distinct values assumed when two columns are compared and one has no statistics
 
 // The statistics for one column, and how many rows its table had when they were taken.
 struct ColumnFacts {

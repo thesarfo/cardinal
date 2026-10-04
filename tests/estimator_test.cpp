@@ -268,7 +268,8 @@ TEST_CASE("without statistics the named fallback numbers are used") {
 TEST_CASE("conditions that are not column-against-value use the fallbacks, even with statistics") {
     Fixture f;
     f.analyze();
-    REQUIRE(f.estimate_fraction("a = b") == kDefaultEquality);
+    // column = column: 1 over the larger distinct count (a has 1000, b has 10)
+    REQUIRE(f.estimate_fraction("a = b") == Approx(1.0 / 1000));
     REQUIRE(f.estimate_fraction("a < b") == kDefaultRange);
     REQUIRE(f.estimate_fraction("a + 1 > 500") == kDefaultRange);
     REQUIRE(f.estimate_fraction("(a + b) IS NULL") == kDefaultIsNull);

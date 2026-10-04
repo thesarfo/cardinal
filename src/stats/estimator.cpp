@@ -225,6 +225,19 @@ double selectivity(const BoundExpr& e, const StatsLookup& stats) {
             } else {
                 if (n.op == BinaryOp::And) return and_selectivity(e, stats);
                 if (n.op == BinaryOp::Or) return or_selectivity(e, stats);
+                if (n.op == BinaryOp::Eq) {
+                    // column = column, as in a join: a value on one side matches about 1 in
+                    // (the larger distinct count) of the other side's rows.
+                    const auto* l = std::get_if<BoundColumn>(&n.left->node);
+                    const auto* r = std::get_if<BoundColumn>(&n.right->node);
+                    if (l && r) {
+                        const ColumnFacts* lf = stats.find(l->id);
+                        const ColumnFacts* rf = stats.find(r->id);
+                        std::int64_t dl = lf ? lf->column->distinct : kDefaultDistinct;
+                        std::int64_t dr = rf ? rf->column->distinct : kDefaultDistinct;
+                        return 1.0 / static_cast<double>(std::max<std::int64_t>(1, std::max(dl, dr)));
+                    }
+                }
                 if (auto cmp = column_vs_literal(e)) {
                     const ColumnFacts* f = stats.find(cmp->column);
                     return f ? compare_selectivity(*f, cmp->op, cmp->literal) : fallback_for(cmp->op);
