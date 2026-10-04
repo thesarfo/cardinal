@@ -16,7 +16,8 @@
 //   foo                       NULL shows as NULL, empty text as (empty)
 //
 // Records are separated by blank lines. Usage: cardinal_slt [--no-optimizer] file.test...
-// Every file must pass with the optimizer on and with it off.
+// Every file must pass with the optimizer on and with it off, and every query in it is
+// also run through the answer checker (engine/answer_checker.h).
 
 #include <algorithm>
 #include <cstdio>
@@ -27,6 +28,7 @@
 #include <vector>
 
 #include "common/error.h"
+#include "engine/answer_checker.h"
 #include "engine/database.h"
 #include "sql/parser.h"
 
@@ -158,6 +160,11 @@ struct Runner {
         }
         if (!result.returns_rows()) {
             fail(at, sql, "statement returned no rows");
+            return;
+        }
+        // Every query must also give the same answer however the optimizer is set.
+        if (cardinal::CheckOutcome checked = cardinal::check_query(db, sql); !checked.ok) {
+            fail(at, sql, checked.detail);
             return;
         }
         if (result.columns.size() != types.size()) {

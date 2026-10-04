@@ -120,4 +120,7 @@ struct Statement {
     std::variant<CreateTable, Insert, Select, Explain> node;
 };
 
+ExprPtr clone(const Expr& expr);
+Select clone(const Select& select);
+
 }  // namespace cardinal

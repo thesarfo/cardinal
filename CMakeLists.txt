@@ -19,6 +19,7 @@ add_library(cardinal_core
   src/catalog/catalog.cpp
   src/common/value.cpp
   src/common/version.cpp
+  src/engine/answer_checker.cpp
   src/engine/database.cpp
   src/engine/explain.cpp
   src/engine/result_format.cpp
@@ -34,6 +35,7 @@ add_library(cardinal_core
   src/logical/plan_printer.cpp
   src/logical/plan_util.cpp
   src/logical/planner.cpp
+  src/sql/ast.cpp
   src/sql/ast_printer.cpp
   src/sql/lexer.cpp
   src/sql/parser.cpp

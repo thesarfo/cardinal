@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -25,19 +27,38 @@ struct QueryResult {
 // runner both go through this.
 class Database {
 public:
+    using Stages = std::vector<std::vector<std::unique_ptr<Rule>>>;
+
+    Database() { rebuild_optimizer(); }
+
     // Runs one statement. Throws ParseError for SQL it can't read and DbError for SQL
     // it can't carry out. A statement that throws changes nothing.
     QueryResult execute(std::string_view sql);
+    QueryResult execute(const Statement& statement);
 
     const Catalog& catalog() const { return catalog_; }
 
     // On by default. Turning it off runs plans exactly as the query was written, which
     // is how tests check that the optimizer never changes an answer.
     void set_optimizer_enabled(bool enabled) { optimize_ = enabled; }
+    bool optimizer_enabled() const { return optimize_; }
+
+    // Names of the rules in use, for switching them off one at a time.
+    std::vector<std::string> rule_names() const;
+    // Rules with these names are left out. Empty by default.
+    void set_disabled_rules(std::set<std::string> names);
+
+    // Replaces the rule set (the default is default_stages). For tests that want to try
+    // a rule of their own, such as one that is deliberately wrong.
+    void set_rule_factory(std::function<Stages()> factory);
 
 private:
+    void rebuild_optimizer();
+
     Catalog catalog_;
-    RuleOptimizer optimizer_{RuleOptimizer::staged(default_stages())};
+    std::function<Stages()> rule_factory_ = default_stages;
+    std::set<std::string> disabled_rules_;
+    RuleOptimizer optimizer_{{}};
     bool optimize_ = true;
 };
 

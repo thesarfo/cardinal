@@ -53,8 +53,37 @@ QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool 
 
 }  // namespace
 
-QueryResult Database::execute(std::string_view sql) {
-    Statement statement = parse_statement(sql);
+QueryResult Database::execute(std::string_view sql) { return execute(parse_statement(sql)); }
+
+std::vector<std::string> Database::rule_names() const {
+    std::vector<std::string> names;
+    for (const auto& stage : rule_factory_())
+        for (const auto& rule : stage) names.push_back(rule->name());
+    return names;
+}
+
+void Database::set_disabled_rules(std::set<std::string> names) {
+    disabled_rules_ = std::move(names);
+    rebuild_optimizer();
+}
+
+void Database::set_rule_factory(std::function<Stages()> factory) {
+    rule_factory_ = std::move(factory);
+    rebuild_optimizer();
+}
+
+void Database::rebuild_optimizer() {
+    Stages stages;
+    for (auto& stage : rule_factory_()) {
+        std::vector<std::unique_ptr<Rule>> kept;
+        for (auto& rule : stage)
+            if (!disabled_rules_.count(rule->name())) kept.push_back(std::move(rule));
+        stages.push_back(std::move(kept));
+    }
+    optimizer_ = RuleOptimizer::staged(std::move(stages));
+}
+
+QueryResult Database::execute(const Statement& statement) {
     if (const auto* s = std::get_if<CreateTable>(&statement.node)) return create_table(catalog_, *s);
     if (const auto* s = std::get_if<Insert>(&statement.node)) return insert(catalog_, *s);
     if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, *s);
