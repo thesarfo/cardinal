@@ -8,6 +8,7 @@
 #include "engine/database.h"
 #include "engine/result_format.h"
 #include "sql/parser.h"
+#include "stats/analyze.h"
 
 namespace {
 
@@ -45,6 +46,14 @@ int main() {
         // Anything that isn't SQL starts with a dot, so it can't clash with SQL.
         if (pending.empty() && !line.empty() && line[0] == '.') {
             if (line == ".quit") return 0;
+            if (line.rfind(".stats ", 0) == 0) {
+                std::string name = line.substr(7);
+                const cardinal::Table* table = db.catalog().get_table(name);
+                if (!table) std::cout << "unknown table " << name << '\n';
+                else if (!table->stats()) std::cout << "no statistics for " << name << "; run ANALYZE " << name << ";\n";
+                else std::cout << cardinal::format_stats(*table, *table->stats()) << '\n';
+                continue;
+            }
             std::cout << "unknown command: " << line << '\n';
             continue;
         }

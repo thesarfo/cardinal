@@ -111,13 +111,18 @@ struct Select {
     std::optional<std::int64_t> limit;
 };
 
+// ANALYZE users: gather statistics about the table's columns.
+struct Analyze {
+    std::string table;
+};
+
 struct Statement;
 struct Explain {
     std::unique_ptr<Statement> inner;
 };
 
 struct Statement {
-    std::variant<CreateTable, Insert, Select, Explain> node;
+    std::variant<CreateTable, Insert, Select, Explain, Analyze> node;
 };
 
 ExprPtr clone(const Expr& expr);

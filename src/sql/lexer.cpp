@@ -25,7 +25,7 @@ const std::unordered_map<std::string, TokenKind>& keywords() {
         {"DOUBLE", TokenKind::DoubleType}, {"TEXT", TokenKind::TextType},
         {"BOOL", TokenKind::BoolType},   {"JOIN", TokenKind::Join},
         {"INNER", TokenKind::Inner},     {"ON", TokenKind::On},
-        {"AS", TokenKind::As},
+        {"AS", TokenKind::As},           {"ANALYZE", TokenKind::Analyze},
     };
     return table;
 }
@@ -189,6 +189,7 @@ const char* token_kind_name(TokenKind kind) {
         case TokenKind::Inner: return "INNER";
         case TokenKind::On: return "ON";
         case TokenKind::As: return "AS";
+        case TokenKind::Analyze: return "ANALYZE";
         case TokenKind::IntType: return "INT";
         case TokenKind::DoubleType: return "DOUBLE";
         case TokenKind::TextType: return "TEXT";

@@ -53,6 +53,7 @@ add_library(cardinal_core
   src/optimizer/rule_optimizer.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
+  src/stats/analyze.cpp
   src/storage/table.cpp
 )
 target_include_directories(cardinal_core PUBLIC src)

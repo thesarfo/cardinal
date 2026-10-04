@@ -138,6 +138,7 @@ std::string print(const Statement& statement) {
                 return out + ")";
             },
             [](const Explain& n) { return "(explain " + print(*n.inner) + ")"; },
+            [](const Analyze& n) { return "(analyze " + n.table + ")"; },
         },
         statement.node);
 }

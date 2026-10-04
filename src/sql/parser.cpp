@@ -98,6 +98,10 @@ private:
             case TokenKind::Create: return Statement{create_table()};
             case TokenKind::Insert: return Statement{insert()};
             case TokenKind::Select: return Statement{select()};
+            case TokenKind::Analyze: {
+                advance();
+                return Statement{Analyze{name("a table name")}};
+            }
             case TokenKind::Explain:
                 if (!allow_explain) break;
                 advance();

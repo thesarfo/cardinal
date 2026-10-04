@@ -12,6 +12,7 @@
 #include "logical/planner.h"
 #include "physical/physical_planner.h"
 #include "physical/physical_printer.h"
+#include "stats/analyze.h"
 #include "sql/parser.h"
 
 namespace cardinal {
@@ -51,6 +52,13 @@ std::uint64_t work_done(const Operator& op) {
 
 double milliseconds_since(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+
+QueryResult analyze(Catalog& catalog, const Analyze& stmt) {
+    Table* table = catalog.get_table(stmt.table);
+    if (!table) throw DbError("unknown table " + stmt.table);
+    table->set_stats(analyze_table(*table));
+    return {{}, {}, "ANALYZE " + stmt.table + " (" + std::to_string(table->rows().size()) + " rows)", {}};
 }
 
 QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize, const Select& stmt) {
@@ -112,6 +120,7 @@ QueryResult Database::execute(const Statement& statement) {
     if (const auto* s = std::get_if<CreateTable>(&statement.node)) return create_table(catalog_, *s);
     if (const auto* s = std::get_if<Insert>(&statement.node)) return insert(catalog_, *s);
     if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, *s);
+    if (const auto* s = std::get_if<Analyze>(&statement.node)) return analyze(catalog_, *s);
 
     const auto& inner = std::get<Explain>(statement.node).inner->node;
     const auto* select_stmt = std::get_if<Select>(&inner);
