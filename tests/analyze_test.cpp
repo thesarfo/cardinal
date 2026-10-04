@@ -169,7 +169,11 @@ TEST_CASE("analyze: the .stats text") {
             "-------+-------+----------+-----+-----\n"
             "id     | 0.0%  | 4        | 1   | 4\n"
             "name   | 25.0% | 2        | ama | kofi\n"
-            "score  | 25.0% | 2        | 3.0 | 9.5");
+            "score  | 25.0% | 2        | 3.0 | 9.5\n"
+            "id histogram (3 buckets, 4 values): 1 2 3 4\n"
+            "name common values: ama x2 (50.0%)\n"
+            "score common values: 3.0 x2 (50.0%)\n"
+            "score histogram (1 bucket, 1 values): 9.5 9.5");
 
     db.execute("INSERT INTO people VALUES (5, 'esi', 1.0)");
     REQUIRE(format_stats(t, *t.stats()).find("warning: the table has 5 rows now; run ANALYZE people again") !=

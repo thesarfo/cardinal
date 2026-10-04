@@ -7,6 +7,58 @@
 
 namespace cardinal {
 
+namespace {
+
+// `values` is sorted and has no NULLs.
+void build_common_and_histogram(const std::vector<Value>& values, Type type, ColumnStats& column) {
+    struct Run {
+        std::size_t start;
+        std::int64_t count;
+    };
+    std::vector<Run> runs;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        if (i > 0 && compare_values(values[i - 1], values[i]) == 0) {
+            ++runs.back().count;
+        } else {
+            runs.push_back({i, 1});
+        }
+    }
+
+    // The most frequent runs that repeat. stable_sort keeps smaller values first among equals.
+    std::vector<std::size_t> order;
+    for (std::size_t r = 0; r < runs.size(); ++r)
+        if (runs[r].count > 1) order.push_back(r);
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return runs[a].count > runs[b].count; });
+    if (order.size() > static_cast<std::size_t>(kMaxCommonValues)) order.resize(kMaxCommonValues);
+
+    std::vector<bool> is_common(runs.size(), false);
+    for (std::size_t r : order) {
+        is_common[r] = true;
+        column.common.push_back({values[runs[r].start], runs[r].count});
+    }
+
+    if (type != Type::Int && type != Type::Double) return;
+    std::vector<double> rest;
+    for (std::size_t r = 0; r < runs.size(); ++r) {
+        if (is_common[r]) continue;
+        for (std::int64_t k = 0; k < runs[r].count; ++k) {
+            const Value& v = values[runs[r].start + static_cast<std::size_t>(k)];
+            rest.push_back(v.type() == Type::Int ? static_cast<double>(v.as_int()) : v.as_double());
+        }
+    }
+    if (rest.empty()) return;
+
+    const std::size_t n = rest.size();
+    // Never more buckets than gaps between values, so no bucket has zero width.
+    const std::size_t buckets = std::max<std::size_t>(1, std::min<std::size_t>(kHistogramBuckets, n - 1));
+    Histogram histogram;
+    histogram.rows = static_cast<std::int64_t>(n);
+    for (std::size_t i = 0; i <= buckets; ++i) histogram.bounds.push_back(rest[i * (n - 1) / buckets]);
+    column.histogram = std::move(histogram);
+}
+
+}  // namespace
+
 TableStats analyze_table(const Table& table) {
     const std::vector<Row>& rows = table.rows();
     TableStats stats;
@@ -29,6 +81,7 @@ TableStats analyze_table(const Table& table) {
             column.min = values.front();
             column.max = values.back();
         }
+        build_common_and_histogram(values, info.columns[c].type, column);
         stats.columns.push_back(std::move(column));
     }
     return stats;
@@ -62,6 +115,28 @@ std::string format_stats(const Table& table, const TableStats& stats) {
             std::string rule;
             for (std::size_t i = 0; i < widths.size(); ++i) rule += (i ? "-+-" : "") + std::string(widths[i], '-');
             out += rule + "\n";
+        }
+    }
+    auto number = [](double d) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%g", d);
+        return std::string(buf);
+    };
+    for (const ColumnStats& c : stats.columns) {
+        if (!c.common.empty()) {
+            std::string line = c.name + " common values:";
+            for (std::size_t i = 0; i < c.common.size(); ++i) {
+                char share[32];
+                std::snprintf(share, sizeof share, "%.1f%%", 100.0 * static_cast<double>(c.common[i].count) / static_cast<double>(stats.row_count));
+                line += std::string(i ? "," : "") + " " + c.common[i].value.to_string() + " x" + std::to_string(c.common[i].count) + " (" + share + ")";
+            }
+            out += line + "\n";
+        }
+        if (c.histogram) {
+            std::string line = c.name + " histogram (" + std::to_string(c.histogram->buckets()) + (c.histogram->buckets() == 1 ? " bucket, " : " buckets, ") +
+                               std::to_string(c.histogram->rows) + " values):";
+            for (double b : c.histogram->bounds) line += " " + number(b);
+            out += line + "\n";
         }
     }
     if (stats_are_stale(table, stats))
