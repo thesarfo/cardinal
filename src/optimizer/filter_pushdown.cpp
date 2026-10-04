@@ -1,8 +1,7 @@
 #include "optimizer/filter_pushdown.h"
 
-#include <algorithm>
-
 #include "logical/plan_util.h"
+#include "optimizer/conjuncts.h"
 
 namespace cardinal {
 
@@ -10,31 +9,8 @@ namespace {
 
 PlanPtr make(auto node) { return std::make_shared<const LogicalPlan>(LogicalPlan{std::move(node)}); }
 
-void split_ands(const BoundExprPtr& e, std::vector<BoundExprPtr>& out) {
-    if (const auto* b = std::get_if<BoundBinary>(&e->node); b && b->op == BinaryOp::And) {
-        split_ands(b->left, out);
-        split_ands(b->right, out);
-    } else {
-        out.push_back(e);
-    }
-}
-
-BoundExprPtr and_all(const std::vector<BoundExprPtr>& parts) {
-    BoundExprPtr result = parts.front();
-    for (std::size_t i = 1; i < parts.size(); ++i)
-        result = std::make_shared<const BoundExpr>(
-            BoundExpr{BoundBinary{BinaryOp::And, result, parts[i]}, Type::Bool});
-    return result;
-}
-
 PlanPtr filtered(const PlanPtr& input, const std::vector<BoundExprPtr>& parts) {
     return parts.empty() ? input : make(LogicalFilter{input, and_all(parts)});
-}
-
-bool covers(const std::vector<ColumnId>& available, const std::set<ColumnId>& needed) {
-    return std::all_of(needed.begin(), needed.end(), [&](ColumnId id) {
-        return std::find(available.begin(), available.end(), id) != available.end();
-    });
 }
 
 }  // namespace
@@ -46,8 +22,7 @@ std::optional<PlanPtr> FilterPushdown::apply(const PlanPtr& node) const {
     if (!join) return std::nullopt;
     if (join->type != JoinType::Inner && join->type != JoinType::Cross) return std::nullopt;
 
-    std::vector<BoundExprPtr> parts;
-    split_ands(filter->predicate, parts);
+    std::vector<BoundExprPtr> parts = split_ands(filter->predicate);
     std::vector<ColumnId> left_columns = output_columns(*join->left);
     std::vector<ColumnId> right_columns = output_columns(*join->right);
 
@@ -56,9 +31,9 @@ std::optional<PlanPtr> FilterPushdown::apply(const PlanPtr& node) const {
         std::set<ColumnId> used = columns_used(*part);
         if (used.empty()) {
             stay.push_back(part);
-        } else if (covers(left_columns, used)) {
+        } else if (columns_within(used, left_columns)) {
             to_left.push_back(part);
-        } else if (covers(right_columns, used)) {
+        } else if (columns_within(used, right_columns)) {
             to_right.push_back(part);
         } else {
             stay.push_back(part);

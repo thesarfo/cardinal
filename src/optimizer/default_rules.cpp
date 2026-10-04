@@ -2,6 +2,7 @@
 
 #include "optimizer/boolean_cleanup.h"
 #include "optimizer/constant_folding.h"
+#include "optimizer/cross_to_inner.h"
 #include "optimizer/filter_cleanup.h"
 #include "optimizer/filter_pushdown.h"
 
@@ -15,6 +16,7 @@ std::vector<std::unique_ptr<Rule>> default_rules() {
     rules.push_back(std::make_unique<MergeFilters>());
     rules.push_back(std::make_unique<EmptyFalseFilter>());
     rules.push_back(std::make_unique<FilterPushdown>());
+    rules.push_back(std::make_unique<CrossToInnerJoin>());
     return rules;
 }
 
