@@ -54,6 +54,7 @@ add_library(cardinal_core
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
   src/stats/analyze.cpp
+  src/stats/estimator.cpp
   src/storage/table.cpp
 )
 target_include_directories(cardinal_core PUBLIC src)
