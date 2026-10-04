@@ -96,6 +96,8 @@ Text render(const BoundExpr& expr, const Namer& name) {
 
 }  // namespace
 
+std::string format_column(ColumnId id, const Scope& scope) { return scope_column_name(id, scope); }
+
 std::string format(const BoundExpr& expr, const Scope& scope) {
     return render(expr, [&](ColumnId id) { return scope_column_name(id, scope); }).text;
 }

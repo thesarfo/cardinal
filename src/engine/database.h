@@ -37,7 +37,7 @@ public:
 
 private:
     Catalog catalog_;
-    RuleOptimizer optimizer_{default_rules()};
+    RuleOptimizer optimizer_{RuleOptimizer::staged(default_stages())};
     bool optimize_ = true;
 };
 

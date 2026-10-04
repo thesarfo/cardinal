@@ -105,14 +105,18 @@ TEST_CASE("cross to inner: in the demo query") {
             "Rules fired\n"
             "  1. filter-pushdown (pass 1)\n"
             "  2. cross-to-inner-join (pass 1)\n"
+            "  3. column-pruning (pass 2)\n"
             "\n"
             "Final plan\n"
             "  Project[name]\n"
             "    Join[INNER ON u.id = user_id]\n"
-            "      Filter[country = 'Ghana']\n"
-            "        Scan[users AS u]\n"
-            "      Filter[amount > 100]\n"
-            "        Scan[orders AS o]");
+            "      Prune[u.id, name]\n"
+            "        Filter[country = 'Ghana']\n"
+            "          Scan[users AS u]\n"
+            "      Prune[user_id]\n"
+            "        Filter[amount > 100]\n"
+            "          Prune[user_id, amount]\n"
+            "            Scan[orders AS o]");
 }
 
 TEST_CASE("cross to inner: same rows as the comma join, NULLs included") {

@@ -64,6 +64,15 @@ Planned plan_node(const LogicalPlan& plan) {
                 return Planned{make(PhysicalSeqScan{n.table}), n.columns};
             },
             [&](const LogicalEmpty& n) { return Planned{make(PhysicalEmpty{}), n.columns}; },
+            [&](const LogicalPrune& n) {
+                Planned in = plan_node(*n.input);
+                std::vector<ProjectItem> items;
+                for (ColumnId id : n.columns) {
+                    BoundExprPtr column = std::make_shared<const BoundExpr>(BoundExpr{BoundColumn{id}, std::nullopt});
+                    items.push_back({to_positions(column, in.layout), ""});
+                }
+                return Planned{make(PhysicalProject{in.plan, std::move(items)}), n.columns};
+            },
             [&](const LogicalJoin& n) {
                 Planned left = plan_node(*n.left);
                 Planned right = plan_node(*n.right);

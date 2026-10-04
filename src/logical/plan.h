@@ -23,6 +23,7 @@ struct LogicalScan {
 };
 enum class JoinType { Inner, Cross };
 
+
 // No rows at all, without reading anything. `columns` are the ids the step it replaced
 // would have produced, so the steps above can still find their columns.
 struct LogicalEmpty {
@@ -50,6 +51,13 @@ struct LogicalSort {
     PlanPtr input;
     std::vector<SortKey> keys;
 };
+// Keeps only these columns, in this order, and drops the rest. Unlike a Project it
+// still produces columns (with the same ids), not computed values, so the steps above
+// can keep reading them. It makes rows narrower before a join copies them.
+struct LogicalPrune {
+    PlanPtr input;
+    std::vector<ColumnId> columns;
+};
 struct LogicalLimit {
     PlanPtr input;
     std::int64_t count;
@@ -64,7 +72,7 @@ struct LogicalJoin {
 };
 
 struct LogicalPlan {
-    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit, LogicalJoin> node;
+    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit, LogicalJoin, LogicalPrune> node;
 };
 
 }  // namespace cardinal

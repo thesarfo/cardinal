@@ -40,6 +40,7 @@ std::vector<ColumnId> output_columns(const LogicalPlan& node) {
             [](const LogicalScan& n) { return n.columns; },
             [](const LogicalEmpty& n) { return n.columns; },
             [](const LogicalProject&) { return std::vector<ColumnId>{}; },
+            [](const LogicalPrune& n) { return n.columns; },
             [](const LogicalJoin& n) {
                 std::vector<ColumnId> columns = output_columns(*n.left);
                 std::vector<ColumnId> right = output_columns(*n.right);

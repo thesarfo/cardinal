@@ -40,22 +40,24 @@ std::string indent_block(const std::string& text, const std::string& indent) {
 
 OptimizeResult RuleOptimizer::optimize(PlanPtr plan) const {
     OptimizeResult result;
-    for (int pass = 1; pass <= max_passes_; ++pass) {
-        bool changed = false;
-        for (const std::unique_ptr<Rule>& rule : rules_) {
-            PlanPtr after = rewrite(*rule, plan);
-            if (after == plan) continue;
-            result.trace.push_back({rule->name(), pass, plan, after});
-            plan = std::move(after);
-            changed = true;
+    int pass_number = 1;
+    for (const std::vector<std::unique_ptr<Rule>>& stage : stages_) {
+        bool settled = false;
+        for (int pass = 1; pass <= max_passes_ && !settled; ++pass) {
+            bool changed = false;
+            for (const std::unique_ptr<Rule>& rule : stage) {
+                PlanPtr after = rewrite(*rule, plan);
+                if (after == plan) continue;
+                result.trace.push_back({rule->name(), pass_number, plan, after});
+                plan = std::move(after);
+                changed = true;
+            }
+            if (changed) ++pass_number;
+            settled = !changed;
         }
-        if (!changed) {
-            result.plan = std::move(plan);
-            return result;
-        }
+        if (!settled) result.hit_pass_limit = true;
     }
     result.plan = std::move(plan);
-    result.hit_pass_limit = true;
     return result;
 }
 

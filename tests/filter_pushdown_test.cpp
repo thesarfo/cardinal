@@ -166,14 +166,18 @@ TEST_CASE("pushdown: the plan from the project's demo query") {
             "\n"
             "Rules fired\n"
             "  1. filter-pushdown (pass 1)\n"
+            "  2. column-pruning (pass 2)\n"
             "\n"
             "Final plan\n"
             "  Project[name]\n"
             "    Join[INNER ON u.id = user_id]\n"
-            "      Filter[country = 'Ghana']\n"
-            "        Scan[users AS u]\n"
-            "      Filter[amount > 100]\n"
-            "        Scan[orders AS o]");
+            "      Prune[u.id, name]\n"
+            "        Filter[country = 'Ghana']\n"
+            "          Scan[users AS u]\n"
+            "      Prune[user_id]\n"
+            "        Filter[amount > 100]\n"
+            "          Prune[user_id, amount]\n"
+            "            Scan[orders AS o]");
 }
 
 TEST_CASE("pushdown: pushed filters merge with filters already on the side") {

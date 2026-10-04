@@ -38,6 +38,7 @@ add_library(cardinal_core
   src/sql/lexer.cpp
   src/sql/parser.cpp
   src/optimizer/boolean_cleanup.cpp
+  src/optimizer/column_pruning.cpp
   src/optimizer/conjuncts.cpp
   src/optimizer/constant_folding.cpp
   src/optimizer/cross_to_inner.cpp

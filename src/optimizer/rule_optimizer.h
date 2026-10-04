@@ -13,7 +13,7 @@ namespace cardinal {
 // One time a rule changed the plan: which rule, and the whole plan on either side.
 struct RuleFiring {
     std::string rule;
-    int pass;  // starting at 1
+    int pass;  // starting at 1; counts passes that changed something, across stages
     PlanPtr before;
     PlanPtr after;
 };
@@ -29,17 +29,29 @@ struct OptimizeResult {
 // Applies the rules to every node, bottom up, pass after pass, until a whole pass
 // changes nothing. Rules run in the order given within a pass. A pass limit keeps a
 // pair of rules that undo each other from looping forever.
+//
+// Rules can also come in stages. Each stage runs to its own fixpoint before the next
+// begins, for rules that should only see a plan the earlier ones are finished with.
 class RuleOptimizer {
 public:
     static constexpr int kDefaultMaxPasses = 20;
 
-    explicit RuleOptimizer(std::vector<std::unique_ptr<Rule>> rules, int max_passes = kDefaultMaxPasses)
-        : rules_(std::move(rules)), max_passes_(max_passes) {}
+    explicit RuleOptimizer(std::vector<std::unique_ptr<Rule>> rules, int max_passes = kDefaultMaxPasses) {
+        stages_.push_back(std::move(rules));
+        max_passes_ = max_passes;
+    }
+
+    static RuleOptimizer staged(std::vector<std::vector<std::unique_ptr<Rule>>> stages,
+                                int max_passes = kDefaultMaxPasses) {
+        RuleOptimizer optimizer({}, max_passes);
+        optimizer.stages_ = std::move(stages);
+        return optimizer;
+    }
 
     OptimizeResult optimize(PlanPtr plan) const;
 
 private:
-    std::vector<std::unique_ptr<Rule>> rules_;
+    std::vector<std::vector<std::unique_ptr<Rule>>> stages_;
     int max_passes_;
 };
 

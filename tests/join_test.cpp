@@ -206,10 +206,12 @@ TEST_CASE("explain: a join") {
             "Rules fired\n"
             "  1. constant-folding (pass 1)\n"
             "  2. boolean-cleanup (pass 1)\n"
+            "  3. column-pruning (pass 2)\n"
             "\n"
             "Final plan\n"
             "  Project[name]\n"
             "    Join[INNER ON u.id = user_id]\n"
             "      Scan[users AS u]\n"
-            "      Scan[orders AS o]");
+            "      Prune[user_id]\n"
+            "        Scan[orders AS o]");
 }

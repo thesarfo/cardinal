@@ -21,6 +21,11 @@ void write(const LogicalPlan& plan, const Scope& scope, int depth, std::string& 
                 return "Scan[" + n.table + (n.alias == n.table ? "" : " AS " + n.alias) + "]";
             },
             [&](const LogicalEmpty&) { return std::string("Empty"); },
+            [&](const LogicalPrune& n) {
+                std::string columns;
+                for (ColumnId id : n.columns) columns += (columns.empty() ? "" : ", ") + format_column(id, scope);
+                return "Prune[" + columns + "]";
+            },
             [&](const LogicalJoin& n) {
                 if (n.type == JoinType::Cross) return std::string("Join[CROSS]");
                 return "Join[INNER ON " + format(*n.condition, scope) + "]";
