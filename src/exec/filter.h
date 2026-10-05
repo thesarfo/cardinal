@@ -11,6 +11,7 @@ namespace cardinal {
 // Column ids in the predicate are row positions (see physical/plan.h).
 class Filter : public Operator {
 public:
+    const char* name() const override { return "Filter"; }
     Filter(std::unique_ptr<Operator> input, BoundExprPtr predicate)
         : input_(std::move(input)), predicate_(std::move(predicate)) {}
 

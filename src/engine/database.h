@@ -13,11 +13,21 @@
 #include <optional>
 
 #include "cost/cost_model.h"
+#include "cost/cost_planner.h"
 #include "engine/explain.h"
 #include "optimizer/rule_optimizer.h"
 #include "physical/physical_planner.h"
 
 namespace cardinal {
+
+// What one operator of the running plan did.
+struct OperatorStat {
+    std::string name;  // "SeqScan", "HashJoin", ...
+    std::uint64_t rows_out = 0;
+    std::uint64_t rows_scanned = 0;  // see ExecStats
+    double self_ms = 0;              // time in this operator alone
+    std::vector<std::uint64_t> input_rows;  // rows each of its inputs handed it, in order
+};
 
 // What running a SELECT cost. Filled in for SELECT only.
 struct QueryStats {
@@ -27,6 +37,7 @@ struct QueryStats {
     // that does not depend on the machine.
     std::uint64_t rows_processed = 0;
     std::string plan_hash;  // of the final physical plan; equal hashes mean equal plans
+    std::vector<OperatorStat> operators;  // every operator, the root first, then its inputs depth first
 };
 
 struct QueryResult {
@@ -52,6 +63,10 @@ public:
     // it can't carry out. A statement that throws changes nothing.
     QueryResult execute(std::string_view sql);
     QueryResult execute(const Statement& statement);
+
+    // What the cost-based planner thinks of a SELECT: the cost of the plan it would choose, and every
+    // option it priced. The `step` pointers in the trace are not valid after this returns.
+    CostBasedPlan cost_of(std::string_view sql);
 
     // EXPLAIN ANALYZE for a SELECT: runs it, and returns the text along with the numbers
     // behind it (the root's estimate and real row count, and the worst q-error of any step).

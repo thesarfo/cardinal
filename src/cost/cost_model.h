@@ -19,13 +19,14 @@ struct Cost {
     auto operator<=>(const Cost&) const = default;
 };
 
-// The numbers the formulas are built from. The defaults are PostgreSQL's cost settings
-// (seq_page_cost, cpu_tuple_cost and cpu_operator_cost), copied as they are. They are not
-// tuned to this engine; calibration (task 6.5) is where that happens.
+// The numbers the formulas are built from. They started as PostgreSQL's cost settings (page
+// 1.0, row 0.01, check 0.0025) and the check cost has since been fitted to this engine by
+// bench/analyze_calibration.py (task 6.5; see docs/cost-model.md). The page cost and the row
+// cost are still PostgreSQL's, because nothing the planner decides depends on them yet.
 struct CostParams {
     double page_cost = 1.0;        // reading one page of a table
     double per_row_cost = 0.01;    // handling one row: reading, building or passing it on
-    double per_check_cost = 0.0025;  // one comparison or hash of a value
+    double per_check_cost = 0.01;  // one comparison or hash of a value, about the same as handling a row here
     // The tables here live in memory and have no pages. Pretending they do keeps the
     // formulas in the usual shape; this is how many rows fit on a pretend page.
     double rows_per_page = 100;

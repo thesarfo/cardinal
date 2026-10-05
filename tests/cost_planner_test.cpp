@@ -67,7 +67,7 @@ const PlanOption& chosen(const StepOptions& step) {
 }  // namespace
 
 TEST_CASE("planner: tiny inputs get a nested loop join, big ones a hash join") {
-    Database tiny = sized(3, 5);
+    Database tiny = sized(1, 2);
     REQUIRE(text(plan(tiny, kJoin)).find("NestedLoopJoin") != std::string::npos);
 
     Database big = sized(1000, 4000);

@@ -33,6 +33,9 @@ public:
 
     const ExecStats& stats() const { return stats_; }
 
+    // What kind of operator this is: "SeqScan", "Filter", "HashJoin", ...
+    virtual const char* name() const = 0;
+
     // The operators this one reads from, for adding up work across a whole tree.
     virtual std::vector<const Operator*> children() const { return {}; }
 

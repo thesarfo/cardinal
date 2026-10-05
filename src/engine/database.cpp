@@ -52,6 +52,23 @@ std::uint64_t work_done(const Operator& op) {
     return total;
 }
 
+double to_ms(std::chrono::nanoseconds t) { return std::chrono::duration<double, std::milli>(t).count(); }
+
+void collect_operator_stats(const Operator& op, std::vector<OperatorStat>& out) {
+    OperatorStat stat;
+    stat.name = op.name();
+    stat.rows_out = op.stats().rows_out;
+    stat.rows_scanned = op.stats().rows_scanned;
+    double self = to_ms(op.stats().time);
+    for (const Operator* child : op.children()) {
+        self -= to_ms(child->stats().time);
+        stat.input_rows.push_back(child->stats().rows_out);
+    }
+    stat.self_ms = std::max(0.0, self);
+    out.push_back(std::move(stat));
+    for (const Operator* child : op.children()) collect_operator_stats(*child, out);
+}
+
 double milliseconds_since(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 }
@@ -104,6 +121,7 @@ QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool 
     result.stats.exec_ms = milliseconds_since(execution_started);
 
     result.stats.rows_processed = work_done(*root);
+    collect_operator_stats(*root, result.stats.operators);
     char hash[17];
     std::snprintf(hash, sizeof hash, "%016zx", std::hash<std::string>{}(print(*plan)));
     result.stats.plan_hash = hash;
@@ -154,8 +172,6 @@ Optimized optimize_for_explain(const PlanPtr& original, const RuleOptimizer& opt
     return {original, optimizer.optimize(original)};
 }
 
-double to_ms(std::chrono::nanoseconds t) { return std::chrono::duration<double, std::milli>(t).count(); }
-
 // The steps of the logical plan and the operators built from it have the same shape, so
 // they can be walked together. A step's own time is what is left after taking off its inputs'.
 void collect_actuals(const LogicalPlan& step, const Operator& op, StepActuals& out) {
@@ -191,6 +207,18 @@ ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOp
 }
 
 }  // namespace
+
+CostBasedPlan Database::cost_of(std::string_view sql) {
+    Statement statement = parse_statement(sql);
+    const auto* select_stmt = std::get_if<Select>(&statement.node);
+    if (!select_stmt) throw DbError("only a SELECT has a cost");
+    BoundSelect bound = bind_select(*select_stmt, catalog_);
+    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);
+    CardinalityEstimator estimator(bound.scope, catalog_);
+    CostBasedPlan planned = plan_by_cost(optimized.result.plan, estimator, *cost_model_);
+    for (StepOptions& step : planned.trace) step.step = nullptr;
+    return planned;
+}
 
 ExplainAnalyzeOutput Database::explain_analyze(std::string_view sql) {
     Statement statement = parse_statement(sql);

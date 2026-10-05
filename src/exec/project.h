@@ -12,6 +12,7 @@ namespace cardinal {
 // Column ids in the expressions are row positions (see physical/plan.h).
 class Project : public Operator {
 public:
+    const char* name() const override { return "Project"; }
     Project(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> exprs)
         : input_(std::move(input)), exprs_(std::move(exprs)) {}
 

@@ -18,6 +18,7 @@ namespace cardinal {
 // right values). With no condition every pairing passes, which is a cross join.
 class NestedLoopJoin : public Operator {
 public:
+    const char* name() const override { return "NestedLoopJoin"; }
     NestedLoopJoin(std::unique_ptr<Operator> left, std::unique_ptr<Operator> right, BoundExprPtr condition)
         : left_(std::move(left)), right_(std::move(right)), condition_(std::move(condition)) {}
 

@@ -9,6 +9,7 @@ namespace cardinal {
 // outlive the scan and must not be inserted into while it runs.
 class SeqScan : public Operator {
 public:
+    const char* name() const override { return "SeqScan"; }
     explicit SeqScan(const Table& table) : table_(table) {}
 
 protected:

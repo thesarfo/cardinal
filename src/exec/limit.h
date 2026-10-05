@@ -12,6 +12,7 @@ namespace cardinal {
 // work than they have to.
 class Limit : public Operator {
 public:
+    const char* name() const override { return "Limit"; }
     Limit(std::unique_ptr<Operator> input, std::int64_t count)
         : input_(std::move(input)), remaining_(count) {}
 

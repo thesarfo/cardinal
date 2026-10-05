@@ -17,6 +17,7 @@ namespace cardinal {
 // Column ids in the key expressions are row positions (see physical/plan.h).
 class Sort : public Operator {
 public:
+    const char* name() const override { return "Sort"; }
     Sort(std::unique_ptr<Operator> input, std::vector<SortKey> keys)
         : input_(std::move(input)), keys_(std::move(keys)) {}
 

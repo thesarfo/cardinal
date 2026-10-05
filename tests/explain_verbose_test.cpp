@@ -66,12 +66,12 @@ TEST_CASE("verbose: every step with its options, the winner starred, and the cho
             "Ways to run it\n"
             "  (cost is the estimated work for the step and everything below it, in made-up units; lower is better; * marks the one chosen)\n"
             "  Project[name]  est_rows=2\n"
-            "    * Project         cost 1.07\n"
+            "    * Project         cost 1.10\n"
             "    Filter[age > 25]  est_rows=2\n"
-            "      * Filter          cost 1.05\n"
+            "      * Filter          cost 1.08\n"
             "      Scan[users]  est_rows=4\n"
             "        * SeqScan[users]  cost 1.04\n"
-            "  Total estimated cost: 1.07\n"
+            "  Total estimated cost: 1.10\n"
             "\n"
             "Chosen plan\n"
             "  Project[#1]\n"
@@ -111,7 +111,7 @@ TEST_CASE("verbose: changing the table sizes changes the winner") {
         REQUIRE(std::regex_search(text, m, std::regex("\\* (NestedLoopJoin|HashJoin \\(build (?:left|right)\\))")));
         return m[1].str();
     };
-    REQUIRE(chosen_join(2) == "NestedLoopJoin");
+    REQUIRE(chosen_join(1) == "NestedLoopJoin");
     REQUIRE(chosen_join(1000) == "HashJoin (build left)");
 }
 

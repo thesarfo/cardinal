@@ -9,7 +9,7 @@ using namespace cardinal;
 using Catch::Approx;
 
 // Every number below was worked out by hand from the formulas in docs/cost-model.md, with the
-// default settings: page_cost 1, per_row_cost 0.01, per_check_cost 0.0025, 100 rows a page.
+// default settings: page_cost 1, per_row_cost 0.01, per_check_cost 0.01, 100 rows a page.
 
 TEST_CASE("cost: adding and comparing") {
     REQUIRE((Cost{2} + Cost{3}).total == 5);
@@ -21,11 +21,14 @@ TEST_CASE("cost: adding and comparing") {
     REQUIRE(Cost{}.total == 0);
 }
 
-TEST_CASE("cost: the default settings are PostgreSQL's") {
+TEST_CASE("cost: the default settings") {
     CostParams p;
-    REQUIRE(p.page_cost == 1.0);
-    REQUIRE(p.per_row_cost == 0.01);
-    REQUIRE(p.per_check_cost == 0.0025);
+    REQUIRE(p.page_cost == 1.0);      // PostgreSQL's
+    REQUIRE(p.per_row_cost == 0.01);  // PostgreSQL's
+    // PostgreSQL uses 0.0025. Measured on this engine a pair check costs about what a row does,
+    // so this was fitted to 0.01 (bench/analyze_calibration.py, docs/cost-model.md).
+    REQUIRE(p.per_check_cost == 0.01);
+    REQUIRE(p.rows_per_page == 100);
 }
 
 TEST_CASE("scan = pages x page_cost + rows x per_row_cost") {
@@ -41,10 +44,10 @@ TEST_CASE("scan = pages x page_cost + rows x per_row_cost") {
 
 TEST_CASE("filter = input rows x per_check_cost x number of conditions") {
     DefaultCostModel m;
-    REQUIRE(m.filter(1000, 1).total == Approx(2.5));
-    REQUIRE(m.filter(1000, 2).total == Approx(5));
-    REQUIRE(m.filter(1000, 4).total == Approx(10));
-    REQUIRE(m.filter(1000, 0).total == Approx(2.5));  // a filter always checks at least once
+    REQUIRE(m.filter(1000, 1).total == Approx(10));
+    REQUIRE(m.filter(1000, 2).total == Approx(20));
+    REQUIRE(m.filter(1000, 4).total == Approx(40));
+    REQUIRE(m.filter(1000, 0).total == Approx(10));  // a filter always checks at least once
     REQUIRE(m.filter(0, 3).total == 0);
 }
 
@@ -56,10 +59,10 @@ TEST_CASE("project = rows x per_row_cost") {
 
 TEST_CASE("sort = rows x log2(rows) x per_check_cost") {
     DefaultCostModel m;
-    REQUIRE(m.sort(1024).total == Approx(1024 * 10 * 0.0025));  // 25.6
-    REQUIRE(m.sort(1024).total == Approx(25.6));
-    REQUIRE(m.sort(2).total == Approx(2 * 1 * 0.0025));
-    REQUIRE(m.sort(8).total == Approx(8 * 3 * 0.0025));
+    REQUIRE(m.sort(1024).total == Approx(1024 * 10 * 0.01));  // 102.4
+    REQUIRE(m.sort(1024).total == Approx(102.4));
+    REQUIRE(m.sort(2).total == Approx(2 * 1 * 0.01));
+    REQUIRE(m.sort(8).total == Approx(8 * 3 * 0.01));
     REQUIRE(m.sort(1).total == 0);  // nothing to put in order
     REQUIRE(m.sort(0).total == 0);
     REQUIRE(m.sort(0.5).total == 0);
@@ -67,18 +70,18 @@ TEST_CASE("sort = rows x log2(rows) x per_check_cost") {
 
 TEST_CASE("nested loop join = every pair checked + output rows x per_row_cost") {
     DefaultCostModel m;
-    // 10 x 20 = 200 pairs x 0.0025 = 0.5, plus 5 output rows x 0.01 = 0.05
-    REQUIRE(m.nested_loop_join(10, 20, 5).total == Approx(0.55));
-    REQUIRE(m.nested_loop_join(1000, 4000, 4000).total == Approx(4000000 * 0.0025 + 4000 * 0.01));  // 10040
+    // 10 x 20 = 200 pairs x 0.01 = 2, plus 5 output rows x 0.01 = 0.05
+    REQUIRE(m.nested_loop_join(10, 20, 5).total == Approx(2.05));
+    REQUIRE(m.nested_loop_join(1000, 4000, 4000).total == Approx(4000000 * 0.01 + 4000 * 0.01));  // 40040
     REQUIRE(m.nested_loop_join(0, 20, 0).total == 0);
     REQUIRE(m.nested_loop_join(10, 0, 0).total == 0);
 }
 
 TEST_CASE("hash join = build rows x (row + check) + probe rows x check + output rows x per_row_cost") {
     DefaultCostModel m;
-    // build 10 x 0.0125 = 0.125, probe 20 x 0.0025 = 0.05, output 5 x 0.01 = 0.05
-    REQUIRE(m.hash_join(10, 20, 5).total == Approx(0.225));
-    REQUIRE(m.hash_join(1000, 4000, 4000).total == Approx(1000 * 0.0125 + 4000 * 0.0025 + 4000 * 0.01));  // 62.5
+    // build 10 x 0.02 = 0.2, probe 20 x 0.01 = 0.2, output 5 x 0.01 = 0.05
+    REQUIRE(m.hash_join(10, 20, 5).total == Approx(0.45));
+    REQUIRE(m.hash_join(1000, 4000, 4000).total == Approx(1000 * 0.02 + 4000 * 0.01 + 4000 * 0.01));  // 100
     REQUIRE(m.hash_join(0, 0, 0).total == 0);
 }
 

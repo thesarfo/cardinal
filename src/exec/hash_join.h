@@ -24,6 +24,7 @@ namespace cardinal {
 //  - `rows_scanned` counts those pairs.
 class HashJoin : public Operator {
 public:
+    const char* name() const override { return "HashJoin"; }
     // Key expressions read one input's row each, by position in that row.
     HashJoin(std::unique_ptr<Operator> left, std::unique_ptr<Operator> right, std::vector<BoundExprPtr> left_keys,
              std::vector<BoundExprPtr> right_keys, BoundExprPtr residual, bool build_left);
