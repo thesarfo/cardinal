@@ -3,8 +3,8 @@
 // cardinal_bench calibrate [--runs 7] [--seed 1]
 // cardinal_bench e4 [--runs 3] [--seed 1]
 //
-// E4: when does a hash join beat a nested loop join? The inner (right) table grows from 10 to
-// 1,000,000 rows against a left table of 10 or 1000 rows, and each size is run as a nested
+// E4: when does a hash join beat a nested loop join? The inner (right) table grows from 1 to
+// 1,000,000 rows against a left table of 1, 10 or 1000 rows, and each size is run as a nested
 // loop, as a hash join building from either side, and as the cost model chooses. Nested loops
 // whose pairs would take minutes are skipped.
 //
@@ -131,8 +131,8 @@ int run_e4(const Options& opt) {
     };
     const std::string sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id";
 
-    for (int outer : {10, 1000}) {
-        for (int inner : {10, 100, 1000, 10000, 100000, 1000000}) {
+    for (int outer : {1, 10, 1000}) {
+        for (int inner : {1, 3, 10, 100, 1000, 10000, 100000, 1000000}) {
             Database db;
             cardinal::generate_users_orders(db, {.users = outer, .orders = inner, .seed = opt.seed});
             db.execute("ANALYZE users");
