@@ -1,0 +1,41 @@
+# experiment: e5, how wrong do the row-count guesses get?
+# table: people(id, city, country, age, tier), 30000 rows; 30 cities, 3 in each of 10 countries
+# shapes: even = cities equally common, country picked on its own; related = city decides country;
+#         skewed = city sizes fall off as 1/rank; tier is skewed (a few values dominate) in every shape
+# statistics: ANALYZE people before every query; this experiment times nothing
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# commit: 9fd273c
+experiment,query_id,variant,table_rows,plan_hash,est_cost,est_rows_root,actual_rows_root,max_node_q_error,rows_processed,plan_ms,exec_ms,exec_ms_min,exec_ms_max,commit,seed
+e5,city,even,30000,,,1018,1018,1.00,,,,,,9fd273c,1
+e5,country,even,30000,,,3101,3101,1.00,,,,,,9fd273c,1
+e5,city-and-country,even,30000,,,105,100,1.05,,,,,,9fd273c,1
+e5,city-and-wrong-country,even,30000,,,103,114,1.10,,,,,,9fd273c,1
+e5,tier-top,even,30000,,,9155,9155,1.00,,,,,,9fd273c,1
+e5,tier-tail,even,30000,,,191,101,1.89,,,,,,9fd273c,1
+e5,tier-range,even,30000,,,7622,7622,1.00,,,,,,9fd273c,1
+e5,age-and-city,even,30000,,,613,604,1.01,,,,,,9fd273c,1
+e5,city,related,30000,,,987,1003,1.02,,,,,,9fd273c,1
+e5,country,related,30000,,,2934,2934,1.00,,,,,,9fd273c,1
+e5,city-and-country,related,30000,,,97,1003,10.39,,,,,,9fd273c,1
+e5,city-and-wrong-country,related,30000,,,94,0,94.49,,,,,,9fd273c,1
+e5,tier-top,related,30000,,,9079,9079,1.00,,,,,,9fd273c,1
+e5,tier-tail,related,30000,,,190,101,1.88,,,,,,9fd273c,1
+e5,tier-range,related,30000,,,7603,7603,1.00,,,,,,9fd273c,1
+e5,age-and-city,related,30000,,,602,629,1.05,,,,,,9fd273c,1
+e5,city,skewed,30000,,,7438,7438,1.00,,,,,,9fd273c,1
+e5,country,skewed,30000,,,3101,3101,1.00,,,,,,9fd273c,1
+e5,city-and-country,skewed,30000,,,769,763,1.01,,,,,,9fd273c,1
+e5,city-and-wrong-country,skewed,30000,,,755,756,1.00,,,,,,9fd273c,1
+e5,tier-top,skewed,30000,,,9155,9155,1.00,,,,,,9fd273c,1
+e5,tier-tail,skewed,30000,,,191,101,1.89,,,,,,9fd273c,1
+e5,tier-range,skewed,30000,,,7622,7622,1.00,,,,,,9fd273c,1
+e5,age-and-city,skewed,30000,,,1184,1184,1.00,,,,,,9fd273c,1
+e5,city,related+skewed,30000,,,7303,7303,1.00,,,,,,9fd273c,1
+e5,country,related+skewed,30000,,,13592,13592,1.00,,,,,,9fd273c,1
+e5,city-and-country,related+skewed,30000,,,3309,7303,2.21,,,,,,9fd273c,1
+e5,city-and-wrong-country,related+skewed,30000,,,1135,0,1134.64,,,,,,9fd273c,1
+e5,tier-top,related+skewed,30000,,,9079,9079,1.00,,,,,,9fd273c,1
+e5,tier-tail,related+skewed,30000,,,190,101,1.88,,,,,,9fd273c,1
+e5,tier-range,related+skewed,30000,,,7603,7603,1.00,,,,,,9fd273c,1
+e5,age-and-city,related+skewed,30000,,,1145,1206,1.05,,,,,,9fd273c,1
