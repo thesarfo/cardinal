@@ -10,6 +10,18 @@ namespace cardinal {
 //
 // Throws std::logic_error if an expression uses a column its input doesn't produce,
 // which would be a bug in the binder or a rewrite.
-PhysicalPtr plan_physical(const LogicalPlan& plan);
+//
+// `options` says how to run joins. This is the simple version; the planner that chooses by
+// cost comes later (task 6.3).
+enum class JoinMethod { NestedLoop, Hash };
+
+struct PlannerOptions {
+    JoinMethod join_method = JoinMethod::NestedLoop;
+    // For hash joins: which input to put in the table. A join with no equality between its
+    // two sides cannot be hashed and stays a nested loop whatever this says.
+    bool build_left = false;
+};
+
+PhysicalPtr plan_physical(const LogicalPlan& plan, const PlannerOptions& options = {});
 
 }  // namespace cardinal

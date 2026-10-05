@@ -11,6 +11,7 @@
 #include "optimizer/default_rules.h"
 #include "engine/explain.h"
 #include "optimizer/rule_optimizer.h"
+#include "physical/physical_planner.h"
 
 namespace cardinal {
 
@@ -66,6 +67,10 @@ public:
     // Rules with these names are left out. Empty by default.
     void set_disabled_rules(std::set<std::string> names);
 
+    // How joins are run: nested loop (the default) or hash. Both give the same rows.
+    void set_planner_options(PlannerOptions options) { planner_ = options; }
+    const PlannerOptions& planner_options() const { return planner_; }
+
     // Replaces the rule set (the default is default_stages). For tests that want to try
     // a rule of their own, such as one that is deliberately wrong.
     void set_rule_factory(std::function<Stages()> factory);
@@ -78,6 +83,7 @@ private:
     std::set<std::string> disabled_rules_;
     RuleOptimizer optimizer_{{}};
     bool optimize_ = true;
+    PlannerOptions planner_;
 };
 
 }  // namespace cardinal

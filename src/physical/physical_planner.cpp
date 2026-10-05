@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include "optimizer/conjuncts.h"
+#include "physical/join_keys.h"
+
 
 namespace cardinal {
 
@@ -57,7 +60,7 @@ struct Planned {
     Layout layout;  // empty after a Project: its rows hold values, not columns
 };
 
-Planned plan_node(const LogicalPlan& plan) {
+Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
     return std::visit(
         Overloaded{
             [&](const LogicalScan& n) {
@@ -65,7 +68,7 @@ Planned plan_node(const LogicalPlan& plan) {
             },
             [&](const LogicalEmpty& n) { return Planned{make(PhysicalEmpty{}), n.columns}; },
             [&](const LogicalPrune& n) {
-                Planned in = plan_node(*n.input);
+                Planned in = plan_node(*n.input, options);
                 std::vector<ProjectItem> items;
                 for (ColumnId id : n.columns) {
                     BoundExprPtr column = std::make_shared<const BoundExpr>(BoundExpr{BoundColumn{id}, std::nullopt});
@@ -74,34 +77,48 @@ Planned plan_node(const LogicalPlan& plan) {
                 return Planned{make(PhysicalProject{in.plan, std::move(items)}), n.columns};
             },
             [&](const LogicalJoin& n) {
-                Planned left = plan_node(*n.left);
-                Planned right = plan_node(*n.right);
+                Planned left = plan_node(*n.left, options);
+                Planned right = plan_node(*n.right, options);
                 Layout layout = left.layout;
                 layout.insert(layout.end(), right.layout.begin(), right.layout.end());
+                if (options.join_method == JoinMethod::Hash) {
+                    JoinKeys split = split_join_condition(n.condition, left.layout, right.layout);
+                    if (!split.keys.empty()) {
+                        std::vector<BoundExprPtr> left_keys, right_keys;
+                        for (const auto& [left_expr, right_expr] : split.keys) {
+                            left_keys.push_back(to_positions(left_expr, left.layout));
+                            right_keys.push_back(to_positions(right_expr, right.layout));
+                        }
+                        BoundExprPtr residual = split.residual.empty() ? nullptr : to_positions(and_all(split.residual), layout);
+                        return Planned{make(PhysicalHashJoin{left.plan, right.plan, std::move(left_keys), std::move(right_keys),
+                                                             residual, options.build_left}),
+                                       layout};
+                    }
+                }
                 BoundExprPtr condition = n.condition ? to_positions(n.condition, layout) : nullptr;
                 return Planned{make(PhysicalNestedLoopJoin{left.plan, right.plan, condition}), layout};
             },
             [&](const LogicalFilter& n) {
-                Planned in = plan_node(*n.input);
+                Planned in = plan_node(*n.input, options);
                 return Planned{make(PhysicalFilter{in.plan, to_positions(n.predicate, in.layout)}),
                                in.layout};
             },
             [&](const LogicalProject& n) {
-                Planned in = plan_node(*n.input);
+                Planned in = plan_node(*n.input, options);
                 std::vector<ProjectItem> items;
                 for (const ProjectItem& item : n.items)
                     items.push_back({to_positions(item.expr, in.layout), item.name});
                 return Planned{make(PhysicalProject{in.plan, std::move(items)}), {}};
             },
             [&](const LogicalSort& n) {
-                Planned in = plan_node(*n.input);
+                Planned in = plan_node(*n.input, options);
                 std::vector<SortKey> keys;
                 for (const SortKey& key : n.keys)
                     keys.push_back({to_positions(key.expr, in.layout), key.descending});
                 return Planned{make(PhysicalSort{in.plan, std::move(keys)}), in.layout};
             },
             [&](const LogicalLimit& n) {
-                Planned in = plan_node(*n.input);
+                Planned in = plan_node(*n.input, options);
                 return Planned{make(PhysicalLimit{in.plan, n.count}), in.layout};
             },
         },
@@ -110,6 +127,6 @@ Planned plan_node(const LogicalPlan& plan) {
 
 }  // namespace
 
-PhysicalPtr plan_physical(const LogicalPlan& plan) { return plan_node(plan).plan; }
+PhysicalPtr plan_physical(const LogicalPlan& plan, const PlannerOptions& options) { return plan_node(plan, options).plan; }
 
 }  // namespace cardinal

@@ -3,6 +3,7 @@
 #include "common/error.h"
 #include "exec/empty.h"
 #include "exec/filter.h"
+#include "exec/hash_join.h"
 #include "exec/limit.h"
 #include "exec/nested_loop_join.h"
 #include "exec/project.h"
@@ -32,6 +33,10 @@ std::unique_ptr<Operator> build_operator(const PhysicalPlan& plan, const Catalog
             [&](const PhysicalNestedLoopJoin& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<NestedLoopJoin>(build_operator(*n.left, catalog),
                                                         build_operator(*n.right, catalog), n.condition);
+            },
+            [&](const PhysicalHashJoin& n) -> std::unique_ptr<Operator> {
+                return std::make_unique<HashJoin>(build_operator(*n.left, catalog), build_operator(*n.right, catalog),
+                                                  n.left_keys, n.right_keys, n.residual, n.build_left);
             },
             [&](const PhysicalFilter& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<Filter>(build_operator(*n.input, catalog), n.predicate);

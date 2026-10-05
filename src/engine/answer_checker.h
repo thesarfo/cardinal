@@ -22,8 +22,9 @@ struct CheckOutcome {
 //   - with the optimizer off (the reference: the plan exactly as written),
 //   - with all rules on,
 //   - with all rules on except one, for each rule in turn, and
-//   - with just one rule on, for each rule in turn.
-// The last two find a wrong rule even when another rule happens to hide its mistake.
+//   - with just one rule on, for each rule in turn, and
+//   - with joins run by hashing (building from either side), with the rules off and on.
+// Running each rule alone finds a wrong rule even when another rule happens to hide its mistake.
 // The database's own settings are put back afterwards. Anything that is not a SELECT,
 // or a SELECT the reference run cannot finish (an error), is not compared.
 //

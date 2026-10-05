@@ -28,6 +28,7 @@ add_library(cardinal_core
   src/engine/result_format.cpp
   src/exec/build.cpp
   src/exec/filter.cpp
+  src/exec/hash_join.cpp
   src/exec/limit.cpp
   src/exec/nested_loop_join.cpp
   src/exec/operator.cpp
@@ -52,6 +53,7 @@ add_library(cardinal_core
   src/optimizer/filter_cleanup.cpp
   src/optimizer/filter_pushdown.cpp
   src/optimizer/rule_optimizer.cpp
+  src/physical/join_keys.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
   src/stats/analyze.cpp

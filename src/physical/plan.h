@@ -36,6 +36,16 @@ struct PhysicalNestedLoopJoin {
     PhysicalPtr left, right;
     BoundExprPtr condition;  // null for a cross join
 };
+// An equality join through a lookup table (see exec/hash_join.h). `left_keys` read the left
+// input's rows and `right_keys` the right input's, each by position in its own row. `residual`
+// is the rest of the condition, over the combined row. `build_left` says which input goes in
+// the table; the output is left values then right values either way.
+struct PhysicalHashJoin {
+    PhysicalPtr left, right;
+    std::vector<BoundExprPtr> left_keys, right_keys;
+    BoundExprPtr residual;  // null if the keys are the whole condition
+    bool build_left;
+};
 struct PhysicalSort {
     PhysicalPtr input;
     std::vector<SortKey> keys;
@@ -46,7 +56,7 @@ struct PhysicalLimit {
 };
 
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin> node;
+    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin> node;
 };
 
 }  // namespace cardinal
