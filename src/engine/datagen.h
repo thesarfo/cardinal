@@ -26,4 +26,26 @@ struct DataOptions {
 // So `country = 'Ghana'` keeps about 5% of users and `amount > 900` keeps about 10% of orders.
 void generate_users_orders(Database& db, const DataOptions& options);
 
+struct PlacesOptions {
+    int rows = 20000;
+    // true: a row's country is the one its city is in, so city decides country.
+    // false: the country is picked on its own, with no link to the city.
+    bool related = true;
+    // 0 gives every city the same number of people. Above 0 it is a Zipf exponent: the first
+    // city is the biggest.
+    double city_skew = 0;
+    // Zipf exponent for `tier`, a column where a few of its 50 values hold most of the rows.
+    double tier_skew = 1.2;
+    uint64_t seed = 1;
+};
+
+// Creates and fills one table, for testing how well row counts are guessed when conditions
+// are not independent:
+//   people(id INT, city TEXT, country TEXT, age INT, tier INT)
+// There are 30 cities, three in each of 10 countries (Accra, Kumasi and Tamale are in Ghana,
+// Lagos, Abuja and Kano are in Nigeria, and so on). With `related`, `city = 'Accra'`
+// always comes with `country = 'Ghana'`. Age is spread evenly over 18 to 77, and does not
+// depend on anything else.
+void generate_places(Database& db, const PlacesOptions& options);
+
 }  // namespace cardinal

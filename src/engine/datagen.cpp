@@ -73,4 +73,61 @@ void generate_users_orders(Database& db, const DataOptions& options) {
     orders.insert_rows(std::move(order_rows));
 }
 
+namespace {
+
+struct Place {
+    const char* city;
+    const char* country;
+};
+
+const Place kPlaces[] = {
+    {"Accra", "Ghana"},       {"Kumasi", "Ghana"},        {"Tamale", "Ghana"},
+    {"Lagos", "Nigeria"},     {"Abuja", "Nigeria"},       {"Kano", "Nigeria"},
+    {"Nairobi", "Kenya"},     {"Mombasa", "Kenya"},       {"Kisumu", "Kenya"},
+    {"Dakar", "Senegal"},     {"Thies", "Senegal"},       {"Saint-Louis", "Senegal"},
+    {"Lome", "Togo"},         {"Kara", "Togo"},           {"Sokode", "Togo"},
+    {"Cotonou", "Benin"},     {"Porto-Novo", "Benin"},    {"Parakou", "Benin"},
+    {"Bamako", "Mali"},       {"Sikasso", "Mali"},        {"Segou", "Mali"},
+    {"Cairo", "Egypt"},       {"Giza", "Egypt"},          {"Luxor", "Egypt"},
+    {"Kampala", "Uganda"},    {"Gulu", "Uganda"},         {"Jinja", "Uganda"},
+    {"Kigali", "Rwanda"},     {"Huye", "Rwanda"},         {"Musanze", "Rwanda"},
+};
+constexpr int kPlaceCount = 30;
+
+// A running total of 1 / k^skew for k = 1..n, for picking a rank by walking along it.
+std::vector<double> zipf_totals(int n, double skew) {
+    std::vector<double> totals;
+    double sum = 0;
+    for (int k = 1; k <= n; ++k) {
+        sum += skew > 0 ? 1.0 / std::pow(static_cast<double>(k), skew) : 1.0;
+        totals.push_back(sum);
+    }
+    return totals;
+}
+
+int pick_rank(const std::vector<double>& totals, double unit) {
+    double target = unit * totals.back();
+    return static_cast<int>(std::lower_bound(totals.begin(), totals.end(), target) - totals.begin());
+}
+
+}  // namespace
+
+void generate_places(Database& db, const PlacesOptions& options) {
+    db.execute("CREATE TABLE people (id INT, city TEXT, country TEXT, age INT, tier INT)");
+    Random random(options.seed);
+    std::vector<double> city_totals = zipf_totals(kPlaceCount, options.city_skew);
+    std::vector<double> tier_totals = zipf_totals(50, options.tier_skew);
+
+    std::vector<Row> rows;
+    rows.reserve(static_cast<std::size_t>(options.rows));
+    for (int id = 1; id <= options.rows; ++id) {
+        const Place& place = kPlaces[pick_rank(city_totals, random.unit())];
+        const char* country = options.related ? place.country : kPlaces[random.below(kPlaceCount)].country;
+        rows.push_back({Value(std::int64_t{id}), Value(std::string(place.city)), Value(std::string(country)),
+                        Value(std::int64_t{18 + static_cast<std::int64_t>(random.below(60))}),
+                        Value(std::int64_t{1 + pick_rank(tier_totals, random.unit())})});
+    }
+    db.table("people")->insert_rows(std::move(rows));
+}
+
 }  // namespace cardinal

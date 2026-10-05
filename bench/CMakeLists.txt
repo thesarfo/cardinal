@@ -10,3 +10,4 @@ target_compile_definitions(cardinal_bench PRIVATE
 
 # Only checks that it runs; the numbers come from bench/run_e1.sh on a release build.
 add_test(NAME bench/smoke COMMAND cardinal_bench e1 --sizes 40 --shares 10 --runs 1)
+add_test(NAME bench/smoke-e5 COMMAND cardinal_bench e5 --rows 300)

@@ -1,4 +1,9 @@
 // cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]
+// cardinal_bench e5 [--rows 30000] [--seed 1]
+//
+// E5: how wrong do the row-count guesses get? Several shapes of data, the same queries on
+// each, and the guess against the real count for every one. Prints CSV (est_rows_root,
+// actual_rows_root and max_node_q_error are the point).
 //
 // E1: how much does filter pushdown help? For each table size and each share of orders
 // kept by the filter, the demo query is run with every rule on and with just the
@@ -64,6 +69,7 @@ struct Options {
     std::vector<int> sizes{500, 1000, 2000};
     std::vector<int> shares{1, 10, 50};
     int runs = 5;
+    int rows = 30000;
     uint64_t seed = 1;
 };
 
@@ -84,6 +90,58 @@ Cell measure(Database& db, const std::string& sql, int runs) {
         if (i == 0) cell.first = std::move(r);
     }
     return cell;
+}
+
+int run_e5(const Options& opt) {
+    std::printf("# experiment: e5, how wrong do the row-count guesses get?\n");
+    std::printf("# table: people(id, city, country, age, tier), %d rows; 30 cities, 3 in each of 10 countries\n", opt.rows);
+    std::printf("# shapes: even = cities equally common, country picked on its own; related = city decides country;\n");
+    std::printf("#         skewed = city sizes fall off as 1/rank; tier is skewed (a few values dominate) in every shape\n");
+    std::printf("# statistics: ANALYZE people before every query; this experiment times nothing\n");
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+    std::printf("experiment,query_id,variant,table_rows,plan_hash,est_cost,est_rows_root,actual_rows_root,"
+                "max_node_q_error,rows_processed,plan_ms,exec_ms,exec_ms_min,exec_ms_max,commit,seed\n");
+
+    struct Shape {
+        const char* name;
+        cardinal::PlacesOptions options;
+    };
+    const Shape shapes[] = {
+        {"even", {.rows = opt.rows, .related = false, .city_skew = 0, .seed = opt.seed}},
+        {"related", {.rows = opt.rows, .related = true, .city_skew = 0, .seed = opt.seed}},
+        {"skewed", {.rows = opt.rows, .related = false, .city_skew = 1.0, .seed = opt.seed}},
+        {"related+skewed", {.rows = opt.rows, .related = true, .city_skew = 1.0, .seed = opt.seed}},
+    };
+    struct Query {
+        const char* id;
+        const char* condition;
+    };
+    const Query queries[] = {
+        {"city", "city = 'Accra'"},
+        {"country", "country = 'Ghana'"},
+        {"city-and-country", "city = 'Accra' AND country = 'Ghana'"},
+        {"city-and-wrong-country", "city = 'Accra' AND country = 'Nigeria'"},
+        {"tier-top", "tier = 1"},
+        {"tier-tail", "tier = 40"},
+        {"tier-range", "tier > 10"},
+        {"age-and-city", "age > 40 AND city = 'Lagos'"},
+    };
+    for (const Shape& shape : shapes) {
+        Database db;
+        cardinal::generate_places(db, shape.options);
+        db.execute("ANALYZE people");
+        for (const Query& query : queries) {
+            std::string sql = std::string("SELECT id FROM people WHERE ") + query.condition;
+            cardinal::ExplainAnalyzeOutput out = db.explain_analyze(sql);
+            std::printf("e5,%s,%s,%d,,,%.0f,%lld,%.2f,,,,,,%s,%llu\n", query.id, shape.name, opt.rows, out.root_estimate,
+                        static_cast<long long>(out.root_actual), out.max_q_error, commit.c_str(),
+                        static_cast<unsigned long long>(opt.seed));
+        }
+    }
+    return 0;
 }
 
 int run_e1(const Options& opt) {
@@ -146,8 +204,11 @@ int run_e1(const Options& opt) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2 || std::string(argv[1]) != "e1") {
-        std::fprintf(stderr, "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n");
+    std::string experiment = argc > 1 ? argv[1] : "";
+    if (experiment != "e1" && experiment != "e5") {
+        std::fprintf(stderr,
+                     "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
+                     "       cardinal_bench e5 [--rows 30000] [--seed 1]\n");
         return 2;
     }
     Options opt;
@@ -156,11 +217,12 @@ int main(int argc, char** argv) {
         if (flag == "--sizes") opt.sizes = parse_list(value);
         else if (flag == "--shares") opt.shares = parse_list(value);
         else if (flag == "--runs") opt.runs = std::max(1, std::atoi(value.c_str()));
+        else if (flag == "--rows") opt.rows = std::max(1, std::atoi(value.c_str()));
         else if (flag == "--seed") opt.seed = std::strtoull(value.c_str(), nullptr, 10);
         else {
             std::fprintf(stderr, "unknown option %s\n", flag.c_str());
             return 2;
         }
     }
-    return run_e1(opt);
+    return experiment == "e5" ? run_e5(opt) : run_e1(opt);
 }
