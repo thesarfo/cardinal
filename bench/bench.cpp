@@ -6,7 +6,8 @@
 //
 // Rules for numbers you can trust (PLAN.md section 6): release build only, one warm-up
 // run, the median of several runs plus the fastest and slowest, a fixed seed, planning
-// timed apart from execution. There are no statistics yet, so there is no ANALYZE.
+// timed apart from execution, and ANALYZE before timing. est_cost stays empty until the
+// cost model exists (M6).
 
 #include <algorithm>
 #include <cstdio>
@@ -68,12 +69,14 @@ struct Options {
 
 struct Cell {
     QueryResult first;
+    cardinal::ExplainAnalyzeOutput analysis;  // the guesses against the real counts
     std::vector<double> exec_ms, plan_ms;
 };
 
 Cell measure(Database& db, const std::string& sql, int runs) {
     Cell cell;
     db.execute(sql);  // warm-up
+    cell.analysis = db.explain_analyze(sql);
     for (int i = 0; i < runs; ++i) {
         QueryResult r = db.execute(sql);
         cell.exec_ms.push_back(r.stats.exec_ms);
@@ -88,7 +91,7 @@ int run_e1(const Options& opt) {
     std::printf("# query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.country = 'Ghana' AND o.amount > T\n");
     std::printf("# data: users = table_rows, orders = 4 x users, even spread, every order has a user; about 5%% of users are in Ghana\n");
     std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median, with the fastest and slowest\n", opt.runs);
-    std::printf("# statistics: none (ANALYZE does not exist yet); est_* and max_node_q_error are empty\n");
+    std::printf("# statistics: ANALYZE users and ANALYZE orders before timing; est_cost is empty until the cost model (M6)\n");
     std::printf("# compiler: %s\n", __VERSION__);
     std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
     std::printf("# cpu: %s\n", cpu_model().c_str());
@@ -103,6 +106,8 @@ int run_e1(const Options& opt) {
     for (int users : opt.sizes) {
         Database db;
         cardinal::generate_users_orders(db, {.users = users, .seed = opt.seed});
+        db.execute("ANALYZE users");
+        db.execute("ANALYZE orders");
         for (int share : opt.shares) {
             std::string sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id "
                               "WHERE u.country = 'Ghana' AND o.amount > " + std::to_string(1000 - 10 * share);
@@ -124,8 +129,9 @@ int run_e1(const Options& opt) {
                 std::fprintf(stderr, "warning: pushdown changed nothing for %s at %d users\n", query_id.c_str(), users);
 
             for (auto& [variant, cell] : {std::pair<const char*, Cell&>{"pushdown_on", on}, {"pushdown_off", off}}) {
-                std::printf("e1,%s,%s,%d,%s,,,%zu,,%llu,%.3f,%.3f,%.3f,%.3f,%s,%llu\n", query_id.c_str(), variant, users,
-                            cell.first.stats.plan_hash.c_str(), cell.first.rows.size(),
+                std::printf("e1,%s,%s,%d,%s,,%.0f,%zu,%.2f,%llu,%.3f,%.3f,%.3f,%.3f,%s,%llu\n", query_id.c_str(), variant, users,
+                            cell.first.stats.plan_hash.c_str(), cell.analysis.root_estimate, cell.first.rows.size(),
+                            cell.analysis.max_q_error,
                             static_cast<unsigned long long>(cell.first.stats.rows_processed), median(cell.plan_ms),
                             median(cell.exec_ms), *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
                             *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str(),
