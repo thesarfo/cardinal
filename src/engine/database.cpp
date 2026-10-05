@@ -127,7 +127,7 @@ QueryResult Database::execute(const Statement& statement) {
     if (!select_stmt) throw DbError("EXPLAIN only works on SELECT");
     BoundSelect bound = bind_select(*select_stmt, catalog_);
     PlanPtr original = plan_select(bound);
-    return {{}, {}, format_explain(original, optimizer_.optimize(original), bound.scope), {}};
+    return {{}, {}, format_explain(original, optimizer_.optimize(original), bound.scope, catalog_), {}};
 }
 
 }  // namespace cardinal

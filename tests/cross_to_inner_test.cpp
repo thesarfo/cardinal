@@ -1,5 +1,6 @@
 #include "optimizer/cross_to_inner.h"
 
+#include "engine/datagen.h"
 #include "engine/result_format.h"
 #include "optimizer/filter_pushdown.h"
 #include "rule_test_util.h"
@@ -91,16 +92,17 @@ TEST_CASE("cross to inner: three tables, with pushdown, match the written-out jo
 
 TEST_CASE("cross to inner: in the demo query") {
     Database db;
-    db.execute("CREATE TABLE users (id INT, name TEXT, country TEXT)");
-    db.execute("CREATE TABLE orders (id INT, user_id INT, amount DOUBLE)");
+    generate_users_orders(db, {.users = 1000});
+    db.execute("ANALYZE users");
+    db.execute("ANALYZE orders");
     REQUIRE(format_result(db.execute("EXPLAIN SELECT u.name FROM users u, orders o "
                                      "WHERE u.id = o.user_id AND u.country = 'Ghana' AND o.amount > 100")) ==
             "Original plan\n"
-            "  Project[name]\n"
-            "    Filter[u.id = user_id AND country = 'Ghana' AND amount > 100]\n"
-            "      Join[CROSS]\n"
-            "        Scan[users AS u]\n"
-            "        Scan[orders AS o]\n"
+            "  Project[name]  est_rows=234\n"
+            "    Filter[u.id = user_id AND country = 'Ghana' AND amount > 100]  est_rows=234\n"
+            "      Join[CROSS]  est_rows=4000000\n"
+            "        Scan[users AS u]  est_rows=1000\n"
+            "        Scan[orders AS o]  est_rows=4000\n"
             "\n"
             "Rules fired\n"
             "  1. filter-pushdown (pass 1)\n"
@@ -108,15 +110,20 @@ TEST_CASE("cross to inner: in the demo query") {
             "  3. column-pruning (pass 2)\n"
             "\n"
             "Final plan\n"
-            "  Project[name]\n"
-            "    Join[INNER ON u.id = user_id]\n"
-            "      Prune[u.id, name]\n"
-            "        Filter[country = 'Ghana']\n"
-            "          Scan[users AS u]\n"
-            "      Prune[user_id]\n"
-            "        Filter[amount > 100]\n"
-            "          Prune[user_id, amount]\n"
-            "            Scan[orders AS o]");
+            "  Project[name]  est_rows=234\n"
+            "    Join[INNER ON u.id = user_id]  est_rows=234\n"
+            "      Prune[u.id, name]  est_rows=65\n"
+            "        Filter[country = 'Ghana']  est_rows=65\n"
+            "          Prune[u.id, name, country]  est_rows=1000\n"
+            "            Scan[users AS u]  est_rows=1000\n"
+            "      Prune[user_id]  est_rows=3602\n"
+            "        Filter[amount > 100]  est_rows=3602\n"
+            "          Prune[user_id, amount]  est_rows=4000\n"
+            "            Scan[orders AS o]  est_rows=4000\n"
+            "\n"
+            "Statistics\n"
+            "  users: analyzed when it had 1000 rows\n"
+            "  orders: analyzed when it had 4000 rows");
 }
 
 TEST_CASE("cross to inner: same rows as the comma join, NULLs included") {

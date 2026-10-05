@@ -30,6 +30,9 @@ public:
     // Safe to call on any step of the plan, in any order. Each step is worked out once.
     double rows(const PlanPtr& plan);
 
+    // The same, for a step that is not held by a shared pointer (the printer hands those out).
+    double rows_of(const LogicalPlan& plan);
+
     // True if rows() has already worked this step out.
     bool has(const PlanPtr& plan) const { return cache_.count(plan.get()) > 0; }
 

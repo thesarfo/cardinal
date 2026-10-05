@@ -20,6 +20,13 @@ double CardinalityEstimator::rows(const PlanPtr& plan) {
     return result;
 }
 
+double CardinalityEstimator::rows_of(const LogicalPlan& plan) {
+    if (auto it = cache_.find(&plan); it != cache_.end()) return it->second;
+    double result = compute(plan);
+    cache_.emplace(&plan, result);
+    return result;
+}
+
 double CardinalityEstimator::compute(const LogicalPlan& plan) {
     return std::visit(
         Overloaded{

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "binder/scope.h"
@@ -15,5 +16,10 @@ namespace cardinal {
 //         Scan[users]
 // `scope` supplies the column names. No trailing newline.
 std::string print(const LogicalPlan& plan, const Scope& scope);
+
+// Same, with `note(step)` added to the end of each line (put your own spacing in it).
+// Return an empty string for no note.
+using NodeNote = std::function<std::string(const LogicalPlan&)>;
+std::string print(const LogicalPlan& plan, const Scope& scope, const NodeNote& note);
 
 }  // namespace cardinal

@@ -12,7 +12,7 @@ struct Overloaded : Ts... {
     using Ts::operator()...;
 };
 
-void write(const LogicalPlan& plan, const Scope& scope, int depth, std::string& out) {
+void write(const LogicalPlan& plan, const Scope& scope, const NodeNote& note, int depth, std::string& out) {
     std::string indent(static_cast<std::size_t>(depth) * 2, ' ');
     std::vector<PlanPtr> children = children_of(plan);
     std::string line = std::visit(
@@ -51,19 +51,21 @@ void write(const LogicalPlan& plan, const Scope& scope, int depth, std::string& 
             },
         },
         plan.node);
-    out += indent + line;
+    out += indent + line + (note ? note(plan) : std::string());
     for (const PlanPtr& child : children) {
         out += "\n";
-        write(*child, scope, depth + 1, out);
+        write(*child, scope, note, depth + 1, out);
     }
 }
 
 }  // namespace
 
-std::string print(const LogicalPlan& plan, const Scope& scope) {
+std::string print(const LogicalPlan& plan, const Scope& scope, const NodeNote& note) {
     std::string out;
-    write(plan, scope, 0, out);
+    write(plan, scope, note, 0, out);
     return out;
 }
+
+std::string print(const LogicalPlan& plan, const Scope& scope) { return print(plan, scope, NodeNote()); }
 
 }  // namespace cardinal

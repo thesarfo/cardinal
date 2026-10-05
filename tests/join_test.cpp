@@ -196,12 +196,16 @@ TEST_CASE("explain: a join") {
     Database db;
     db.execute("CREATE TABLE users (id INT, name TEXT)");
     db.execute("CREATE TABLE orders (id INT, user_id INT)");
+    db.execute("INSERT INTO users VALUES (1, 'ama'), (2, 'kofi'), (3, 'esi')");
+    db.execute("INSERT INTO orders VALUES (10, 1), (11, 1), (12, 3), (13, 3), (14, 2), (15, 1)");
+    db.execute("ANALYZE users");
+    db.execute("ANALYZE orders");
     REQUIRE(format_result(db.execute("EXPLAIN SELECT name FROM users u JOIN orders o ON u.id = o.user_id AND 1 = 1")) ==
             "Original plan\n"
-            "  Project[name]\n"
-            "    Join[INNER ON u.id = user_id AND 1 = 1]\n"
-            "      Scan[users AS u]\n"
-            "      Scan[orders AS o]\n"
+            "  Project[name]  est_rows=1\n"
+            "    Join[INNER ON u.id = user_id AND 1 = 1]  est_rows=1\n"
+            "      Scan[users AS u]  est_rows=3\n"
+            "      Scan[orders AS o]  est_rows=6\n"
             "\n"
             "Rules fired\n"
             "  1. constant-folding (pass 1)\n"
@@ -209,9 +213,13 @@ TEST_CASE("explain: a join") {
             "  3. column-pruning (pass 2)\n"
             "\n"
             "Final plan\n"
-            "  Project[name]\n"
-            "    Join[INNER ON u.id = user_id]\n"
-            "      Scan[users AS u]\n"
-            "      Prune[user_id]\n"
-            "        Scan[orders AS o]");
+            "  Project[name]  est_rows=6\n"
+            "    Join[INNER ON u.id = user_id]  est_rows=6\n"
+            "      Scan[users AS u]  est_rows=3\n"
+            "      Prune[user_id]  est_rows=6\n"
+            "        Scan[orders AS o]  est_rows=6\n"
+            "\n"
+            "Statistics\n"
+            "  users: analyzed when it had 3 rows\n"
+            "  orders: analyzed when it had 6 rows");
 }
