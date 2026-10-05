@@ -91,17 +91,18 @@ Observation observe(Database& db, const Statement& rows_stmt, const Statement& k
 // Puts the database's settings back when the check is over, however it ends.
 class RestoreSettings {
 public:
-    explicit RestoreSettings(Database& db) : db_(db), enabled_(db.optimizer_enabled()), planner_(db.planner_options()) {}
+    explicit RestoreSettings(Database& db) : db_(db), enabled_(db.optimizer_enabled()), planner_(db.forced_planner()) {}
     ~RestoreSettings() {
         db_.set_disabled_rules({});
         db_.set_optimizer_enabled(enabled_);
-        db_.set_planner_options(planner_);
+        if (planner_) db_.set_planner_options(*planner_);
+        else db_.use_cost_based_planner();
     }
 
 private:
     Database& db_;
     bool enabled_;
-    PlannerOptions planner_;
+    std::optional<PlannerOptions> planner_;
 };
 
 }  // namespace
@@ -115,14 +116,16 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
     Statement keys = mode == Mode::Rows || mode == Mode::CountOnly ? Statement{clone(*select)} : key_query(*select);
 
     RestoreSettings restore(db);
-    auto run = [&](bool optimize, std::set<std::string> disabled, PlannerOptions planner = {}) {
+    // Joins are chosen by cost unless a setup forces a method.
+    auto run = [&](bool optimize, std::set<std::string> disabled, std::optional<PlannerOptions> planner = std::nullopt) {
         db.set_optimizer_enabled(optimize);
         db.set_disabled_rules(std::move(disabled));
-        db.set_planner_options(planner);
+        if (planner) db.set_planner_options(*planner);
+        else db.use_cost_based_planner();
         return observe(db, statement, keys, mode);
     };
 
-    const Observation reference = run(false, {});
+    const Observation reference = run(false, {}, PlannerOptions{JoinMethod::NestedLoop});
     if (reference.failed) return {true, "the query fails without the optimizer, so it was not compared: " + reference.error, {}};
 
     struct Setup {
@@ -156,13 +159,21 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
     // Joins run by hashing, from either side, with and without the rules.
     for (bool optimize : {false, true}) {
         for (bool build_left : {false, true}) {
-            Observation hashed = run(optimize, {}, {JoinMethod::Hash, build_left});
+            Observation hashed = run(optimize, {}, PlannerOptions{JoinMethod::Hash, build_left});
             if (!(hashed == reference))
                 wrong.push_back({std::string("hash joins (build ") + (build_left ? "left" : "right") + ", optimizer " +
                                      (optimize ? "on" : "off") + ")",
                                  hashed});
         }
     }
+
+    // Joins chosen by cost, with the rules off.
+    Observation costed = run(false, {});
+    if (!(costed == reference)) wrong.push_back({"joins chosen by cost, optimizer off", costed});
+
+    // Joins forced to the nested loop, with the rules on.
+    Observation looped = run(true, {}, PlannerOptions{JoinMethod::NestedLoop});
+    if (!(looped == reference)) wrong.push_back({"nested loop joins, optimizer on", looped});
 
     if (wrong.empty()) return {};
 

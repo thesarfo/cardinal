@@ -100,6 +100,8 @@ TEST_CASE("datagen: match rate sets how many orders belong to a real user") {
 TEST_CASE("query stats: plan and execution time, work done, plan hash") {
     Database db;
     generate_users_orders(db, {.users = 100});
+    // Nested loop joins, so the work is the pairs tested and does not depend on a planner's choice.
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
     const char* sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE o.amount > 500";
     QueryResult r = db.execute(sql);
     REQUIRE(r.stats.plan_ms >= 0);

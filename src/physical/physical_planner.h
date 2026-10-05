@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "physical/plan.h"
 
 namespace cardinal {
@@ -15,11 +17,22 @@ namespace cardinal {
 // cost comes later (task 6.3).
 enum class JoinMethod { NestedLoop, Hash };
 
-struct PlannerOptions {
-    JoinMethod join_method = JoinMethod::NestedLoop;
+struct JoinChoice {
+    JoinMethod method = JoinMethod::NestedLoop;
     // For hash joins: which input to put in the table. A join with no equality between its
     // two sides cannot be hashed and stays a nested loop whatever this says.
     bool build_left = false;
+};
+
+struct PlannerOptions {
+    PlannerOptions() = default;
+    PlannerOptions(JoinMethod method, bool build_left_input = false) : join_method(method), build_left(build_left_input) {}
+
+    JoinMethod join_method = JoinMethod::NestedLoop;
+    bool build_left = false;
+    // If set, asked about every join, and its answer is used instead of the two settings above.
+    // This is how a planner that prices the options (cost/cost_planner.h) picks per join.
+    std::function<JoinChoice(const LogicalJoin&)> choose_join;
 };
 
 PhysicalPtr plan_physical(const LogicalPlan& plan, const PlannerOptions& options = {});

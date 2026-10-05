@@ -81,7 +81,8 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                 Planned right = plan_node(*n.right, options);
                 Layout layout = left.layout;
                 layout.insert(layout.end(), right.layout.begin(), right.layout.end());
-                if (options.join_method == JoinMethod::Hash) {
+                JoinChoice choice = options.choose_join ? options.choose_join(n) : JoinChoice{options.join_method, options.build_left};
+                if (choice.method == JoinMethod::Hash) {
                     JoinKeys split = split_join_condition(n.condition, left.layout, right.layout);
                     if (!split.keys.empty()) {
                         std::vector<BoundExprPtr> left_keys, right_keys;
@@ -91,7 +92,7 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                         }
                         BoundExprPtr residual = split.residual.empty() ? nullptr : to_positions(and_all(split.residual), layout);
                         return Planned{make(PhysicalHashJoin{left.plan, right.plan, std::move(left_keys), std::move(right_keys),
-                                                             residual, options.build_left}),
+                                                             residual, choice.build_left}),
                                        layout};
                     }
                 }

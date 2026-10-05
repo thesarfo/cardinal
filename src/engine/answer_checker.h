@@ -23,7 +23,8 @@ struct CheckOutcome {
 //   - with all rules on,
 //   - with all rules on except one, for each rule in turn, and
 //   - with just one rule on, for each rule in turn, and
-//   - with joins run by hashing (building from either side), with the rules off and on.
+//   - with joins run by hashing (building from either side), with the rules off and on,
+//   - with joins chosen by cost with the rules off, and with nested loop joins with the rules on.
 // Running each rule alone finds a wrong rule even when another rule happens to hide its mistake.
 // The database's own settings are put back afterwards. Anything that is not a SELECT,
 // or a SELECT the reference run cannot finish (an error), is not compared.

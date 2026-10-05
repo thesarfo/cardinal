@@ -7,6 +7,7 @@
 #include "binder/binder.h"
 #include "common/error.h"
 #include "engine/explain.h"
+#include "cost/cost_planner.h"
 #include "exec/build.h"
 #include "logical/plan_util.h"
 #include "expr/evaluator.h"
@@ -62,13 +63,21 @@ QueryResult analyze(Catalog& catalog, const Analyze& stmt) {
     return {{}, {}, "ANALYZE " + stmt.table + " (" + std::to_string(table->rows().size()) + " rows)", {}};
 }
 
-QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize, const PlannerOptions& planner,
-                   const Select& stmt) {
+// Chooses how to run each step: the forced options if there are any, otherwise by cost.
+PhysicalPtr plan_physically(const Catalog& catalog, const BoundSelect& bound, const PlanPtr& logical,
+                            const std::optional<PlannerOptions>& forced, const CostModel& model) {
+    if (forced) return plan_physical(*logical, *forced);
+    CardinalityEstimator estimator(bound.scope, catalog);
+    return plan_by_cost(logical, estimator, model).physical;
+}
+
+QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize,
+                   const std::optional<PlannerOptions>& forced, const CostModel& model, const Select& stmt) {
     auto planning_started = std::chrono::steady_clock::now();
     BoundSelect bound = bind_select(stmt, catalog);
     PlanPtr logical = plan_select(bound);
     if (optimize) logical = optimizer.optimize(logical).plan;
-    PhysicalPtr plan = plan_physical(*logical, planner);
+    PhysicalPtr plan = plan_physically(catalog, bound, logical, forced, model);
     std::unique_ptr<Operator> root = build_operator(*plan, catalog);
 
     QueryResult result;
@@ -146,11 +155,12 @@ void collect_actuals(const LogicalPlan& step, const Operator& op, StepActuals& o
 }
 
 ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize,
-                                            const PlannerOptions& planner, const Select& stmt) {
+                                            const std::optional<PlannerOptions>& forced, const CostModel& model,
+                                            const Select& stmt) {
     auto planning_started = std::chrono::steady_clock::now();
     BoundSelect bound = bind_select(stmt, catalog);
     Optimized optimized = optimize_for_explain(plan_select(bound), optimizer, optimize);
-    std::unique_ptr<Operator> root = build_operator(*plan_physical(*optimized.result.plan, planner), catalog);
+    std::unique_ptr<Operator> root = build_operator(*plan_physically(catalog, bound, optimized.result.plan, forced, model), catalog);
     AnalyzeSummary summary;
     summary.plan_ms = milliseconds_since(planning_started);
 
@@ -169,19 +179,19 @@ ExplainAnalyzeOutput Database::explain_analyze(std::string_view sql) {
     Statement statement = parse_statement(sql);
     const auto* select_stmt = std::get_if<Select>(&statement.node);
     if (!select_stmt) throw DbError("EXPLAIN ANALYZE only works on SELECT");
-    return explain_analyze_select(catalog_, optimizer_, optimize_, planner_, *select_stmt);
+    return explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, *select_stmt);
 }
 
 QueryResult Database::execute(const Statement& statement) {
     if (const auto* s = std::get_if<CreateTable>(&statement.node)) return create_table(catalog_, *s);
     if (const auto* s = std::get_if<Insert>(&statement.node)) return insert(catalog_, *s);
-    if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, planner_, *s);
+    if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, *s);
     if (const auto* s = std::get_if<Analyze>(&statement.node)) return analyze(catalog_, *s);
 
     const auto& explain = std::get<Explain>(statement.node);
     const auto* select_stmt = std::get_if<Select>(&explain.inner->node);
     if (!select_stmt) throw DbError(explain.analyze ? "EXPLAIN ANALYZE only works on SELECT" : "EXPLAIN only works on SELECT");
-    if (explain.analyze) return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, planner_, *select_stmt).text, {}};
+    if (explain.analyze) return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, *select_stmt).text, {}};
 
     BoundSelect bound = bind_select(*select_stmt, catalog_);
     Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);

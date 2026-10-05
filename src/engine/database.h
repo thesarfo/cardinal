@@ -9,6 +9,10 @@
 #include "catalog/catalog.h"
 #include "common/value.h"
 #include "optimizer/default_rules.h"
+#include <memory>
+#include <optional>
+
+#include "cost/cost_model.h"
 #include "engine/explain.h"
 #include "optimizer/rule_optimizer.h"
 #include "physical/physical_planner.h"
@@ -67,9 +71,16 @@ public:
     // Rules with these names are left out. Empty by default.
     void set_disabled_rules(std::set<std::string> names);
 
-    // How joins are run: nested loop (the default) or hash. Both give the same rows.
-    void set_planner_options(PlannerOptions options) { planner_ = options; }
-    const PlannerOptions& planner_options() const { return planner_; }
+    // Joins are run by whichever method the cost model prices cheaper. To force one instead
+    // (all hash, say, or all nested loop), set planner options; the rows are the same either
+    // way. use_cost_based_planner() goes back to choosing.
+    void set_planner_options(PlannerOptions options) { forced_planner_ = std::move(options); }
+    void use_cost_based_planner() { forced_planner_.reset(); }
+    const std::optional<PlannerOptions>& forced_planner() const { return forced_planner_; }
+
+    // Swap the cost model, for experiments. The default is DefaultCostModel.
+    void set_cost_model(std::unique_ptr<CostModel> model) { cost_model_ = std::move(model); }
+    const CostModel& cost_model() const { return *cost_model_; }
 
     // Replaces the rule set (the default is default_stages). For tests that want to try
     // a rule of their own, such as one that is deliberately wrong.
@@ -83,7 +94,8 @@ private:
     std::set<std::string> disabled_rules_;
     RuleOptimizer optimizer_{{}};
     bool optimize_ = true;
-    PlannerOptions planner_;
+    std::optional<PlannerOptions> forced_planner_;
+    std::unique_ptr<CostModel> cost_model_ = std::make_unique<DefaultCostModel>();
 };
 
 }  // namespace cardinal
