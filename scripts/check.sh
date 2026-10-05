@@ -5,4 +5,4 @@ cd "$(dirname "$0")/.."
 
 cmake --preset asan
 cmake --build --preset asan
-ctest --preset asan
+ctest --preset asan -j 4

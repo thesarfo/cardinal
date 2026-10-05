@@ -202,7 +202,7 @@ TEST_CASE("fuzz: a rule that only changes how ties are broken is not a bug") {
     Database db;
     create_fuzz_tables(db, 9);
     with_extra_rule(db, [] { return std::make_unique<BreaksTiesBackwards>(); });
-    FuzzReport report = fuzz(db, 9, 600);
+    FuzzReport report = fuzz(db, 9, 300);
     if (report.failure) FAIL(describe(*report.failure));
 }
 

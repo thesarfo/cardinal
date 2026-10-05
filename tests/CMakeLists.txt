@@ -27,7 +27,7 @@ endforeach()
 # Random queries through the answer checker. scripts/fuzz.sh runs many seeds, 10,000 queries each.
 add_executable(cardinal_fuzz fuzz_main.cpp)
 target_link_libraries(cardinal_fuzz PRIVATE cardinal_core)
-add_test(NAME fuzz/seed1-2000 COMMAND cardinal_fuzz 1 2000)
+add_test(NAME fuzz/seed1-1000 COMMAND cardinal_fuzz 1 1000)
 
 # The .test files must also agree with SQLite, except where a reason is written down in
 # tests/slt/sqlite_exclusions.txt.

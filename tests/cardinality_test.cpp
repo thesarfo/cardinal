@@ -16,11 +16,15 @@ using Catch::Approx;
 
 namespace {
 
-// 1000 users, 4000 orders, every order has a user, spread evenly.
+// 300 users, 1200 orders, every order has a user, spread evenly. (Small, because the checks
+// below run the joins for real, and the nested loop join tests every pair.)
+constexpr int kUsers = 300;
+constexpr int kOrders = 4 * kUsers;
+
 struct World {
     Database db;
     explicit World(bool analyze = true) {
-        generate_users_orders(db, {.users = 1000});
+        generate_users_orders(db, {.users = kUsers});
         if (analyze) {
             db.execute("ANALYZE users");
             db.execute("ANALYZE orders");
@@ -68,33 +72,33 @@ void for_each_node(const PlanPtr& plan, const std::function<void(const PlanPtr&)
 
 TEST_CASE("cardinality: a scan is the table's row count") {
     World w;
-    REQUIRE(w.estimate("SELECT id FROM users") == 1000);
-    REQUIRE(w.estimate("SELECT id FROM orders") == 4000);
+    REQUIRE(w.estimate("SELECT id FROM users") == kUsers);
+    REQUIRE(w.estimate("SELECT id FROM orders") == kOrders);
 }
 
 TEST_CASE("cardinality: a scan uses the rows now, even if the table has grown since ANALYZE") {
     World w;
     w.db.execute("INSERT INTO users VALUES (5000, 'new', 'Ghana', 30)");
-    REQUIRE(w.estimate("SELECT id FROM users") == 1001);
+    REQUIRE(w.estimate("SELECT id FROM users") == kUsers + 1);
 }
 
 TEST_CASE("cardinality: a filter keeps its selectivity of the rows coming in") {
     World w;
     double guess = w.estimate("SELECT id FROM users WHERE age > 50");
     double truth = w.actual("SELECT id FROM users WHERE age > 50");
-    REQUIRE(std::fabs(guess - truth) / 1000 < 0.05);
+    REQUIRE(std::fabs(guess - truth) / kUsers < 0.05);
     REQUIRE(w.estimate("SELECT id FROM users WHERE id = 7") == Approx(1));
     REQUIRE(w.estimate("SELECT id FROM users WHERE FALSE") == 0);
-    REQUIRE(w.estimate("SELECT id FROM users WHERE TRUE") == 1000);
+    REQUIRE(w.estimate("SELECT id FROM users WHERE TRUE") == kUsers);
 }
 
 TEST_CASE("cardinality: an equality join is left x right / the larger distinct count") {
     World w;
-    // users.id has 1000 distinct values; orders.user_id has fewer, since some users have no orders
+    // users.id has 300 distinct values; orders.user_id has no more, since some users may have no orders
     const ColumnStats& user_id = w.db.table("orders")->stats()->columns[1];
-    REQUIRE(user_id.distinct <= 1000);
+    REQUIRE(user_id.distinct <= kUsers);
     double guess = w.estimate("SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id");
-    REQUIRE(guess == Approx(1000.0 * 4000.0 / 1000.0));
+    REQUIRE(guess == Approx(1.0 * kOrders));  // users x orders / the larger distinct count
     REQUIRE(guess == Approx(w.actual("SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id")));
 }
 
@@ -109,13 +113,13 @@ TEST_CASE("cardinality: the same join written with a comma is estimated the same
 
 TEST_CASE("cardinality: a cross join is left x right") {
     World w;
-    REQUIRE(w.estimate("SELECT u.id FROM users u, orders o") == 4000000);
+    REQUIRE(w.estimate("SELECT u.id FROM users u, orders o") == static_cast<double>(kUsers) * kOrders);
 }
 
 TEST_CASE("cardinality: a table joined to itself on its key") {
     World w;
     double guess = w.estimate("SELECT a.id FROM users a JOIN users b ON a.id = b.id");
-    REQUIRE(guess == Approx(1000));
+    REQUIRE(guess == Approx(kUsers));
     REQUIRE(guess == Approx(w.actual("SELECT a.id FROM users a JOIN users b ON a.id = b.id")));
 }
 
@@ -135,15 +139,15 @@ TEST_CASE("cardinality: filters on either side of a join, with and without pushd
 TEST_CASE("cardinality: limit caps the rows, but never raises them") {
     World w;
     REQUIRE(w.estimate("SELECT id FROM users LIMIT 10") == 10);
-    REQUIRE(w.estimate("SELECT id FROM users LIMIT 5000") == 1000);
+    REQUIRE(w.estimate("SELECT id FROM users LIMIT 5000") == kUsers);
     REQUIRE(w.estimate("SELECT id FROM users WHERE id = 7 LIMIT 10") == Approx(1));
     REQUIRE(w.estimate("SELECT id FROM users LIMIT 0") == 0);
 }
 
 TEST_CASE("cardinality: project, sort and prune pass the count through") {
     World w;
-    REQUIRE(w.estimate("SELECT id FROM users ORDER BY age") == 1000);
-    REQUIRE(w.estimate("SELECT name FROM users u JOIN orders o ON u.id = o.user_id", true) == Approx(4000));
+    REQUIRE(w.estimate("SELECT id FROM users ORDER BY age") == kUsers);
+    REQUIRE(w.estimate("SELECT name FROM users u JOIN orders o ON u.id = o.user_id", true) == Approx(kOrders));
 }
 
 TEST_CASE("cardinality: a step the optimizer emptied has no rows") {
@@ -184,17 +188,17 @@ TEST_CASE("cardinality: answers are saved, so asking again gives the same number
 
 TEST_CASE("cardinality: without ANALYZE the table sizes are exact and the rest is guessed") {
     World w(/*analyze=*/false);
-    REQUIRE(w.estimate("SELECT id FROM users") == 1000);
-    REQUIRE(w.estimate("SELECT id FROM users WHERE age > 50") == Approx(1000 * kDefaultRange));
-    REQUIRE(w.estimate("SELECT id FROM users WHERE id = 7") == Approx(1000 * kDefaultEquality));
+    REQUIRE(w.estimate("SELECT id FROM users") == kUsers);
+    REQUIRE(w.estimate("SELECT id FROM users WHERE age > 50") == Approx(kUsers * kDefaultRange));
+    REQUIRE(w.estimate("SELECT id FROM users WHERE id = 7") == Approx(kUsers * kDefaultEquality));
     // 200 distinct values assumed on both sides
     REQUIRE(w.estimate("SELECT u.id FROM users u JOIN orders o ON u.id = o.user_id") ==
-            Approx(1000.0 * 4000.0 / kDefaultDistinct));
+            Approx(1.0 * kUsers * kOrders / kDefaultDistinct));
 }
 
 TEST_CASE("cardinality: a column with statistics against one without") {
     World w(/*analyze=*/false);
     w.db.execute("ANALYZE users");  // orders left unanalyzed
-    // users.id: 1000 distinct; orders.user_id: assumed 200; the larger is 1000
-    REQUIRE(w.estimate("SELECT u.id FROM users u JOIN orders o ON u.id = o.user_id") == Approx(4000));
+    // users.id: 300 distinct; orders.user_id: assumed 200; the larger is 300
+    REQUIRE(w.estimate("SELECT u.id FROM users u JOIN orders o ON u.id = o.user_id") == Approx(kOrders));
 }
