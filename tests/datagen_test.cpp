@@ -126,3 +126,18 @@ TEST_CASE("query stats: only SELECT fills them in") {
     Database db;
     REQUIRE(db.execute("CREATE TABLE t (a INT)").stats.plan_hash.empty());
 }
+
+TEST_CASE("datagen: the number of orders can be given directly") {
+    Database db;
+    generate_users_orders(db, {.users = 10, .orders = 37});
+    REQUIRE(db.execute("SELECT id FROM users").rows.size() == 10);
+    REQUIRE(db.execute("SELECT id FROM orders").rows.size() == 37);
+
+    Database none;
+    generate_users_orders(none, {.users = 10, .orders = 0});
+    REQUIRE(none.execute("SELECT id FROM orders").rows.empty());
+
+    Database by_user;  // the default is still users x orders per user
+    generate_users_orders(by_user, {.users = 10, .orders_per_user = 3});
+    REQUIRE(by_user.execute("SELECT id FROM orders").rows.size() == 30);
+}

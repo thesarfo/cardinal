@@ -60,7 +60,8 @@ void generate_users_orders(Database& db, const DataOptions& options) {
         return 1 + (it - running_total.begin());
     };
 
-    const std::int64_t order_count = static_cast<std::int64_t>(n) * options.orders_per_user;
+    const std::int64_t order_count =
+        options.orders >= 0 ? options.orders : static_cast<std::int64_t>(n) * options.orders_per_user;
     std::vector<Row> order_rows;
     order_rows.reserve(static_cast<std::size_t>(order_count));
     for (std::int64_t id = 1; id <= order_count; ++id) {

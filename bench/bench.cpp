@@ -1,6 +1,12 @@
 // cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]
 // cardinal_bench e5 [--rows 30000] [--seed 1]
 // cardinal_bench calibrate [--runs 7] [--seed 1]
+// cardinal_bench e4 [--runs 3] [--seed 1]
+//
+// E4: when does a hash join beat a nested loop join? The inner (right) table grows from 10 to
+// 1,000,000 rows against a left table of 10 or 1000 rows, and each size is run as a nested
+// loop, as a hash join building from either side, and as the cost model chooses. Nested loops
+// whose pairs would take minutes are skipped.
 //
 // calibrate: a grid of joins across table sizes and filter selectivities, each run three ways
 // (nested loop, hash building left, hash building right), recording the cost model's price
@@ -97,6 +103,79 @@ Cell measure(Database& db, const std::string& sql, int runs) {
         if (i == 0) cell.first = std::move(r);
     }
     return cell;
+}
+
+int run_e4(const Options& opt) {
+    std::printf("# experiment: e4, hash join against nested loop join by the size of the inner table\n");
+    std::printf("# query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id, users = the outer (left) table, orders = the inner (right) table\n");
+    std::printf("# every order has a user, spread evenly; a nested loop whose pairs would pass 2 x 10^8 is skipped\n");
+    std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median\n", opt.runs);
+    std::printf("# statistics: ANALYZE before every point; est_cost is the cost model's price for the whole plan\n");
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::printf("# cpu: %s\n", cpu_model().c_str());
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+    std::printf("experiment,query_id,variant,table_rows,plan_hash,est_cost,est_rows_root,actual_rows_root,"
+                "max_node_q_error,rows_processed,plan_ms,exec_ms,exec_ms_min,exec_ms_max,commit,seed,outer_rows\n");
+
+    struct Method {
+        const char* name;
+        cardinal::PlannerOptions options;
+        const char* option_name;
+    };
+    const Method methods[] = {
+        {"nested_loop", cardinal::PlannerOptions{cardinal::JoinMethod::NestedLoop}, "NestedLoopJoin"},
+        {"hash_build_right", cardinal::PlannerOptions{cardinal::JoinMethod::Hash, false}, "HashJoin (build right)"},
+        {"hash_build_left", cardinal::PlannerOptions{cardinal::JoinMethod::Hash, true}, "HashJoin (build left)"},
+    };
+    const std::string sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id";
+
+    for (int outer : {10, 1000}) {
+        for (int inner : {10, 100, 1000, 10000, 100000, 1000000}) {
+            Database db;
+            cardinal::generate_users_orders(db, {.users = outer, .orders = inner, .seed = opt.seed});
+            db.execute("ANALYZE users");
+            db.execute("ANALYZE orders");
+            std::string query_id = "e4-o" + std::to_string(outer) + "-i" + std::to_string(inner);
+
+            cardinal::CostBasedPlan priced = db.cost_of(sql);
+            const cardinal::StepOptions* join_step = nullptr;
+            const cardinal::PlanOption* chosen = nullptr;
+            for (const cardinal::StepOptions& step : priced.trace)
+                for (const cardinal::PlanOption& o : step.options)
+                    if (o.name.find("Join") != std::string::npos) join_step = &step;
+            for (const cardinal::PlanOption& o : join_step->options)
+                if (o.chosen) chosen = &o;
+
+            auto record = [&](const std::string& variant, double est, Cell cell) {
+                std::printf("e4,%s,%s,%d,%s,%.4f,,%zu,,%llu,%.3f,%.4f,%.4f,%.4f,%s,%llu,%d\n", query_id.c_str(), variant.c_str(),
+                            inner, cell.first.stats.plan_hash.c_str(), est, cell.first.rows.size(),
+                            static_cast<unsigned long long>(cell.first.stats.rows_processed), median(cell.plan_ms),
+                            median(cell.exec_ms), *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
+                            *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str(),
+                            static_cast<unsigned long long>(opt.seed), outer);
+                std::fflush(stdout);
+            };
+
+            for (const Method& method : methods) {
+                double est = std::nan("");
+                for (const cardinal::PlanOption& o : join_step->options)
+                    if (o.name == method.option_name) est = priced.cost.total - chosen->cost.total + o.cost.total;
+                if (method.options.join_method == cardinal::JoinMethod::NestedLoop && double(outer) * inner > 2e8) {
+                    std::fprintf(stderr, "skipping the nested loop at %d x %d\n", outer, inner);
+                    continue;
+                }
+                db.set_planner_options(method.options);
+                record(method.name, est, measure(db, sql, opt.runs));
+            }
+            db.use_cost_based_planner();
+            record(std::string("cost_based=") + (chosen->name == "NestedLoopJoin" ? "nested_loop"
+                                                  : chosen->name == "HashJoin (build left)" ? "hash_build_left" : "hash_build_right"),
+                   priced.cost.total, measure(db, sql, opt.runs));
+        }
+    }
+    return 0;
 }
 
 int run_calibrate(const Options& opt) {
@@ -251,7 +330,8 @@ int run_e1(const Options& opt) {
     std::printf("# query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.country = 'Ghana' AND o.amount > T\n");
     std::printf("# data: users = table_rows, orders = 4 x users, even spread, every order has a user; about 5%% of users are in Ghana\n");
     std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median, with the fastest and slowest\n", opt.runs);
-    std::printf("# statistics: ANALYZE users and ANALYZE orders before timing; est_cost is empty until the cost model (M6)\n");
+    std::printf("# variants: pushdown_on or pushdown_off, plus the join: nested_loop (forced) or cost_based (the planner's choice)\n");
+    std::printf("# statistics: ANALYZE users and ANALYZE orders before timing; est_cost is not recorded for this experiment\n");
     std::printf("# compiler: %s\n", __VERSION__);
     std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
     std::printf("# cpu: %s\n", cpu_model().c_str());
@@ -273,31 +353,40 @@ int run_e1(const Options& opt) {
                               "WHERE u.country = 'Ghana' AND o.amount > " + std::to_string(1000 - 10 * share);
             std::string query_id = "demo-keep" + std::to_string(share);
 
-            Cell on, off;
-            db.set_disabled_rules({});
-            on = measure(db, sql, opt.runs);
-            db.set_disabled_rules({"filter-pushdown"});
-            off = measure(db, sql, opt.runs);
-            db.set_disabled_rules({});
+            // The join is run twice over: forced to a nested loop (as E1 first measured it), and
+            // chosen by cost, which now picks a hash join.
+            for (bool nested_loop : {true, false}) {
+                if (nested_loop) db.set_planner_options(cardinal::PlannerOptions{cardinal::JoinMethod::NestedLoop});
+                else db.use_cost_based_planner();
+                const char* join = nested_loop ? "nested_loop" : "cost_based";
 
-            if (on.first.rows.size() != off.first.rows.size()) {
-                std::fprintf(stderr, "different row counts with and without pushdown for %s at %d users\n",
-                             query_id.c_str(), users);
-                return 1;
-            }
-            if (on.first.stats.plan_hash == off.first.stats.plan_hash)
-                std::fprintf(stderr, "warning: pushdown changed nothing for %s at %d users\n", query_id.c_str(), users);
+                Cell on, off;
+                db.set_disabled_rules({});
+                on = measure(db, sql, opt.runs);
+                db.set_disabled_rules({"filter-pushdown"});
+                off = measure(db, sql, opt.runs);
+                db.set_disabled_rules({});
 
-            for (auto& [variant, cell] : {std::pair<const char*, Cell&>{"pushdown_on", on}, {"pushdown_off", off}}) {
-                std::printf("e1,%s,%s,%d,%s,,%.0f,%zu,%.2f,%llu,%.3f,%.3f,%.3f,%.3f,%s,%llu\n", query_id.c_str(), variant, users,
-                            cell.first.stats.plan_hash.c_str(), cell.analysis.root_estimate, cell.first.rows.size(),
-                            cell.analysis.max_q_error,
-                            static_cast<unsigned long long>(cell.first.stats.rows_processed), median(cell.plan_ms),
-                            median(cell.exec_ms), *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
-                            *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str(),
-                            static_cast<unsigned long long>(opt.seed));
+                if (on.first.rows.size() != off.first.rows.size()) {
+                    std::fprintf(stderr, "different row counts with and without pushdown for %s at %d users\n",
+                                 query_id.c_str(), users);
+                    return 1;
+                }
+                if (on.first.stats.plan_hash == off.first.stats.plan_hash)
+                    std::fprintf(stderr, "warning: pushdown changed nothing for %s at %d users (%s)\n", query_id.c_str(), users, join);
+
+                for (auto& [variant, cell] : {std::pair<const char*, Cell&>{"pushdown_on", on}, {"pushdown_off", off}}) {
+                    std::printf("e1,%s,%s+%s,%d,%s,,%.0f,%zu,%.2f,%llu,%.3f,%.3f,%.3f,%.3f,%s,%llu\n", query_id.c_str(), variant,
+                                join, users, cell.first.stats.plan_hash.c_str(), cell.analysis.root_estimate, cell.first.rows.size(),
+                                cell.analysis.max_q_error,
+                                static_cast<unsigned long long>(cell.first.stats.rows_processed), median(cell.plan_ms),
+                                median(cell.exec_ms), *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
+                                *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str(),
+                                static_cast<unsigned long long>(opt.seed));
+                }
+                std::fflush(stdout);
             }
-            std::fflush(stdout);
+            db.use_cost_based_planner();
         }
     }
     return 0;
@@ -307,11 +396,12 @@ int run_e1(const Options& opt) {
 
 int main(int argc, char** argv) {
     std::string experiment = argc > 1 ? argv[1] : "";
-    if (experiment != "e1" && experiment != "e5" && experiment != "calibrate") {
+    if (experiment != "e1" && experiment != "e4" && experiment != "e5" && experiment != "calibrate") {
         std::fprintf(stderr,
                      "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
                      "       cardinal_bench e5 [--rows 30000] [--seed 1]\n"
-                     "       cardinal_bench calibrate [--runs 7] [--seed 1]\n");
+                     "       cardinal_bench calibrate [--runs 7] [--seed 1]\n"
+                     "       cardinal_bench e4 [--runs 3] [--seed 1]\n");
         return 2;
     }
     Options opt;
@@ -328,5 +418,6 @@ int main(int argc, char** argv) {
         }
     }
     if (experiment == "calibrate") return run_calibrate(opt);
+    if (experiment == "e4") return run_e4(opt);
     return experiment == "e5" ? run_e5(opt) : run_e1(opt);
 }

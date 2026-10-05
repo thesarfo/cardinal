@@ -8,7 +8,8 @@ namespace cardinal {
 
 struct DataOptions {
     int users = 1000;
-    int orders_per_user = 4;  // orders = users * orders_per_user
+    int orders_per_user = 4;  // orders = users * orders_per_user...
+    int orders = -1;          // ...unless this is set, which gives the number of orders directly
     // 0 spreads orders evenly over users. Above 0 it is a Zipf exponent: user 1 gets the
     // most orders, user 2 about 1/2^skew as many, and so on. 1.0 is a typical heavy skew.
     double skew = 0;
