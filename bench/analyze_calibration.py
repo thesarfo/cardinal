@@ -100,7 +100,7 @@ def main():
     print(f"{PATH}: {len(rows)} runs, {len(cells(rows))} queries\n")
 
     print(f"Fitted on {used} join runs: check = {check * 1e6:.2f} ns, row = {row * 1e6:.2f} ns")
-    print(f"  row / check = {row / check:.2f}   (the default settings assume 0.01 / 0.0025 = 4.00)")
+    print(f"  row / check = {row / check:.2f}   (PostgreSQL's settings, where this started, assume 0.01 / 0.0025 = 4.00)")
     per_check = 0.01 * check / row
     print(f"  as CostParams with per_row_cost = 0.01:  per_check_cost = {per_check:.5f}\n")
 
