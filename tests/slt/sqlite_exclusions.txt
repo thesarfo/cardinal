@@ -1,0 +1,41 @@
+# Records where cardinal and SQLite give different answers, and why. Format:
+#   file | sql | reason
+# `scripts/compare_sqlite.py` fails on any difference not listed here, and on any entry
+# that no longer applies.
+#
+# Checked and found to AGREE (so nothing to list):
+#   integer division and remainder: both truncate toward zero (7 / 2 = 3, -7 / 2 = -3, -7 % 3 = -1)
+#   where NULLs sort: both put NULL first when ascending and last when descending
+#   string comparison: both compare bytes ('B' < 'a'), and '' is smaller than any text
+#   NULL logic (three-valued AND, OR, NOT, IN, BETWEEN), joins, LIMIT, ORDER BY with several keys
+#
+# The differences below come from SQLite being dynamically typed and forgiving, where cardinal
+# checks types, and from a few places where cardinal raises an error that SQLite does not.
+
+# ---- SQLite is more lenient than cardinal ----
+05_limit.test | SELECT n FROM t LIMIT -1 | SQLite reads a negative LIMIT as "no limit"; cardinal's LIMIT takes only a plain whole number.
+09_errors.test | CREATE TABLE bad (a) | SQLite allows a column with no type; cardinal requires one of INT, DOUBLE, TEXT or BOOL.
+11_joins.test | SELECT * FROM users u JOIN orders o | SQLite allows JOIN without ON and treats it as a cross join; cardinal requires ON (use a comma for a cross join).
+11_joins.test | SELECT * FROM users u JOIN orders o ON u.id | SQLite treats any number as true or false in ON; cardinal requires a true/false value.
+
+# ---- SQLite does not check types ----
+08_types.test | INSERT INTO t VALUES ('one', 2, 'x', TRUE) | SQLite stores any value in any column (a column type is only a hint); cardinal checks each value against its column.
+08_types.test | INSERT INTO t VALUES (1, 'two', 'x', TRUE) | Same: SQLite stores text in a DOUBLE column.
+08_types.test | INSERT INTO t VALUES (1.5, 2, 'x', TRUE) | Same: SQLite stores 1.5 in an INT column; cardinal rejects a DOUBLE where an INT is expected.
+08_types.test | INSERT INTO t VALUES (1, 2, 3, TRUE) | Same: SQLite stores a number in a TEXT column.
+08_types.test | INSERT INTO t VALUES (1, 2, 'x', 1) | Same: SQLite has no separate true/false type, so 1 is accepted for a BOOL column.
+08_types.test | INSERT INTO t VALUES (2, 2, 'y', FALSE), (3, 3, 3, FALSE) | Same, for a multi-row insert. (cardinal adds none of the rows; this script undoes SQLite's.)
+08_types.test | SELECT i FROM t WHERE s = 1 | SQLite compares across types with a fixed order (text is always bigger than a number); cardinal rejects comparing TEXT with INT.
+08_types.test | SELECT i FROM t WHERE b = 1 | Same: SQLite stores true as 1, so BOOL = 1 works; cardinal rejects it.
+08_types.test | SELECT i FROM t WHERE s + 1 > 0 | SQLite turns text into a number (non-numbers become 0); cardinal needs numbers on both sides of +.
+08_types.test | SELECT i FROM t WHERE i AND b | SQLite treats any number as true or false; cardinal needs true/false values for AND.
+08_types.test | SELECT i FROM t WHERE i | Same: cardinal needs a true/false value in WHERE.
+08_types.test | SELECT i FROM t WHERE NOT i | Same, for NOT.
+08_types.test | SELECT d % 2 FROM t | SQLite's % converts a DOUBLE to a whole number first; cardinal's % accepts only whole numbers.
+
+# ---- cardinal raises an error where SQLite carries on ----
+06_arithmetic.test | SELECT a / 0 FROM t | SQLite returns NULL for division by zero; cardinal raises an error.
+06_arithmetic.test | SELECT a % 0 FROM t | Same, for the remainder.
+06_arithmetic.test | SELECT x / 0 FROM t | Same, for a DOUBLE.
+06_arithmetic.test | SELECT a + b FROM t | SQLite switches to floating point when a whole number overflows (9223372036854775807 + 1 gives 9.22337203685478e+18); cardinal raises an integer overflow error.
+06_arithmetic.test | SELECT a * 2 FROM t | Same, for multiplication.

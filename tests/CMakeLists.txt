@@ -28,3 +28,10 @@ endforeach()
 add_executable(cardinal_fuzz fuzz_main.cpp)
 target_link_libraries(cardinal_fuzz PRIVATE cardinal_core)
 add_test(NAME fuzz/seed1-2000 COMMAND cardinal_fuzz 1 2000)
+
+# The .test files must also agree with SQLite, except where a reason is written down in
+# tests/slt/sqlite_exclusions.txt.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+  add_test(NAME sqlite/compare COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/compare_sqlite.py)
+endif()
