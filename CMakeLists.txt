@@ -18,6 +18,7 @@ add_library(cardinal_core
   src/binder/scope.cpp
   src/catalog/catalog.cpp
   src/common/value.cpp
+  src/cost/cost_model.cpp
   src/common/version.cpp
   src/engine/answer_checker.cpp
   src/engine/database.cpp
