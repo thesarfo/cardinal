@@ -2,27 +2,27 @@
 # query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.country = 'Ghana' AND o.amount > T
 # data: users = table_rows, orders = 4 x users, even spread, every order has a user; about 5% of users are in Ghana
 # runs: 1 warm-up, then 5 timed; exec_ms is the median, with the fastest and slowest
-# statistics: none (ANALYZE does not exist yet); est_* and max_node_q_error are empty
+# statistics: ANALYZE users and ANALYZE orders before timing; est_cost is empty until the cost model (M6)
 # compiler: 15.2.0
 # build: Release, flags: -O2 -DNDEBUG
 # cpu: Intel(R) Core(TM) i7-14700HX
-# commit: e0150e0
+# commit: eac13e1
 experiment,query_id,variant,table_rows,plan_hash,est_cost,est_rows_root,actual_rows_root,max_node_q_error,rows_processed,plan_ms,exec_ms,exec_ms_min,exec_ms_max,commit,seed
-e1,demo-keep1,pushdown_on,500,31114b5d331d201c,,,2,,5748,0.019,0.706,0.694,0.855,e0150e0,1
-e1,demo-keep1,pushdown_off,500,58308654468fbe84,,,2,,1007004,0.007,61.851,61.483,62.349,e0150e0,1
-e1,demo-keep10,pushdown_on,500,6c4d13312fa10842,,,12,,12500,0.008,0.670,0.668,0.672,e0150e0,1
-e1,demo-keep10,pushdown_off,500,8c6d5eedf8686538,,,12,,1007024,0.009,61.905,61.537,62.884,e0150e0,1
-e1,demo-keep50,pushdown_on,500,6a162b9f2af2470d,,,59,,38944,0.008,2.002,1.980,2.008,e0150e0,1
-e1,demo-keep50,pushdown_off,500,b6f841ab894e198a,,,59,,1007118,0.010,61.906,61.774,61.962,e0150e0,1
-e1,demo-keep1,pushdown_on,1000,31114b5d331d201c,,,3,,13017,0.008,0.733,0.724,0.741,e0150e0,1
-e1,demo-keep1,pushdown_off,1000,58308654468fbe84,,,3,,4014006,0.018,247.456,246.238,247.672,e0150e0,1
-e1,demo-keep10,pushdown_on,1000,6c4d13312fa10842,,,32,,36257,0.008,1.908,1.893,1.918,e0150e0,1
-e1,demo-keep10,pushdown_off,1000,8c6d5eedf8686538,,,32,,4014064,0.020,247.175,247.103,250.049,e0150e0,1
-e1,demo-keep50,pushdown_on,1000,6a162b9f2af2470d,,,134,,145805,0.009,7.344,7.226,7.517,e0150e0,1
-e1,demo-keep50,pushdown_off,1000,b6f841ab894e198a,,,134,,4014268,0.018,247.129,246.431,249.824,e0150e0,1
-e1,demo-keep1,pushdown_on,2000,31114b5d331d201c,,,4,,30000,0.011,1.678,1.665,1.688,e0150e0,1
-e1,demo-keep1,pushdown_off,2000,58308654468fbe84,,,4,,16028008,0.023,990.584,988.212,991.093,e0150e0,1
-e1,demo-keep10,pushdown_on,2000,6c4d13312fa10842,,,53,,118872,0.012,6.134,6.084,6.215,e0150e0,1
-e1,demo-keep10,pushdown_off,2000,8c6d5eedf8686538,,,53,,16028106,0.024,988.276,987.298,989.898,e0150e0,1
-e1,demo-keep50,pushdown_on,2000,6a162b9f2af2470d,,,253,,498406,0.018,24.699,24.491,24.931,e0150e0,1
-e1,demo-keep50,pushdown_off,2000,b6f841ab894e198a,,,253,,16028506,0.024,988.085,987.005,989.300,e0150e0,1
+e1,demo-keep1,pushdown_on,500,31114b5d331d201c,,1,2,1.52,5748,0.015,0.497,0.443,0.555,eac13e1,1
+e1,demo-keep1,pushdown_off,500,58308654468fbe84,,1,2,1.52,1007004,0.015,61.169,60.883,61.578,eac13e1,1
+e1,demo-keep10,pushdown_on,500,6c4d13312fa10842,,14,12,1.16,12500,0.008,0.658,0.652,0.660,eac13e1,1
+e1,demo-keep10,pushdown_off,500,8c6d5eedf8686538,,14,12,1.16,1007024,0.016,61.282,60.944,61.464,eac13e1,1
+e1,demo-keep50,pushdown_on,500,6a162b9f2af2470d,,64,59,1.08,38944,0.009,1.959,1.942,1.993,eac13e1,1
+e1,demo-keep50,pushdown_off,500,b6f841ab894e198a,,64,59,1.08,1007118,0.013,61.112,60.797,61.367,eac13e1,1
+e1,demo-keep1,pushdown_on,1000,31114b5d331d201c,,2,3,1.30,13017,0.009,0.719,0.716,0.728,eac13e1,1
+e1,demo-keep1,pushdown_off,1000,58308654468fbe84,,2,3,1.30,4014006,0.021,243.938,242.191,244.080,eac13e1,1
+e1,demo-keep10,pushdown_on,1000,6c4d13312fa10842,,25,32,1.26,36257,0.009,1.866,1.856,1.961,eac13e1,1
+e1,demo-keep10,pushdown_off,1000,8c6d5eedf8686538,,25,32,1.26,4014064,0.017,244.893,242.899,245.660,eac13e1,1
+e1,demo-keep50,pushdown_on,1000,6a162b9f2af2470d,,131,134,1.02,145805,0.008,7.197,7.084,7.236,eac13e1,1
+e1,demo-keep50,pushdown_off,1000,b6f841ab894e198a,,131,134,1.02,4014268,0.016,244.400,243.520,244.706,eac13e1,1
+e1,demo-keep1,pushdown_on,2000,31114b5d331d201c,,5,4,1.34,30000,0.009,1.647,1.626,1.670,eac13e1,1
+e1,demo-keep1,pushdown_off,2000,58308654468fbe84,,5,4,1.34,16028008,0.029,976.088,971.064,977.578,eac13e1,1
+e1,demo-keep10,pushdown_on,2000,6c4d13312fa10842,,48,53,1.11,118872,0.010,5.940,5.899,6.011,eac13e1,1
+e1,demo-keep10,pushdown_off,2000,8c6d5eedf8686538,,48,53,1.11,16028106,0.032,973.482,971.244,974.850,eac13e1,1
+e1,demo-keep50,pushdown_on,2000,6a162b9f2af2470d,,235,253,1.08,498406,0.014,24.550,24.293,24.650,eac13e1,1
+e1,demo-keep50,pushdown_off,2000,b6f841ab894e198a,,235,253,1.08,16028506,0.031,975.060,968.986,975.935,eac13e1,1
