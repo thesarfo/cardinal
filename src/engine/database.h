@@ -9,6 +9,7 @@
 #include "catalog/catalog.h"
 #include "common/value.h"
 #include "optimizer/default_rules.h"
+#include "engine/explain.h"
 #include "optimizer/rule_optimizer.h"
 
 namespace cardinal {
@@ -46,6 +47,10 @@ public:
     // it can't carry out. A statement that throws changes nothing.
     QueryResult execute(std::string_view sql);
     QueryResult execute(const Statement& statement);
+
+    // EXPLAIN ANALYZE for a SELECT: runs it, and returns the text along with the numbers
+    // behind it (the root's estimate and real row count, and the worst q-error of any step).
+    ExplainAnalyzeOutput explain_analyze(std::string_view sql);
 
     const Catalog& catalog() const { return catalog_; }
     // For loading data without going through SQL. Null if there is no such table.

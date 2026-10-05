@@ -137,7 +137,7 @@ std::string print(const Statement& statement) {
                 if (n.limit) out += " (limit " + std::to_string(*n.limit) + ")";
                 return out + ")";
             },
-            [](const Explain& n) { return "(explain " + print(*n.inner) + ")"; },
+            [](const Explain& n) { return std::string(n.analyze ? "(explain-analyze " : "(explain ") + print(*n.inner) + ")"; },
             [](const Analyze& n) { return "(analyze " + n.table + ")"; },
         },
         statement.node);

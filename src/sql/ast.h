@@ -118,6 +118,7 @@ struct Analyze {
 
 struct Statement;
 struct Explain {
+    bool analyze = false;  // EXPLAIN ANALYZE: also run the query and show the real row counts
     std::unique_ptr<Statement> inner;
 };
 

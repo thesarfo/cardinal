@@ -8,6 +8,7 @@
 #include "common/error.h"
 #include "engine/explain.h"
 #include "exec/build.h"
+#include "logical/plan_util.h"
 #include "expr/evaluator.h"
 #include "logical/planner.h"
 #include "physical/physical_planner.h"
@@ -116,18 +117,74 @@ void Database::rebuild_optimizer() {
     optimizer_ = RuleOptimizer::staged(std::move(stages));
 }
 
+namespace {
+
+struct Optimized {
+    PlanPtr original;
+    OptimizeResult result;
+};
+
+Optimized optimize_for_explain(const PlanPtr& original, const RuleOptimizer& optimizer, bool optimize) {
+    if (!optimize) return {original, OptimizeResult{original, {}, false}};
+    return {original, optimizer.optimize(original)};
+}
+
+double to_ms(std::chrono::nanoseconds t) { return std::chrono::duration<double, std::milli>(t).count(); }
+
+// The steps of the logical plan and the operators built from it have the same shape, so
+// they can be walked together. A step's own time is what is left after taking off its inputs'.
+void collect_actuals(const LogicalPlan& step, const Operator& op, StepActuals& out) {
+    double self = to_ms(op.stats().time);
+    std::vector<PlanPtr> inputs = children_of(step);
+    std::vector<const Operator*> operators = op.children();
+    for (std::size_t i = 0; i < inputs.size() && i < operators.size(); ++i) {
+        self -= to_ms(operators[i]->stats().time);
+        collect_actuals(*inputs[i], *operators[i], out);
+    }
+    out[&step] = {static_cast<std::int64_t>(op.stats().rows_out), std::max(0.0, self)};
+}
+
+ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize,
+                                            const Select& stmt) {
+    auto planning_started = std::chrono::steady_clock::now();
+    BoundSelect bound = bind_select(stmt, catalog);
+    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer, optimize);
+    std::unique_ptr<Operator> root = build_operator(*plan_physical(*optimized.result.plan), catalog);
+    AnalyzeSummary summary;
+    summary.plan_ms = milliseconds_since(planning_started);
+
+    auto execution_started = std::chrono::steady_clock::now();
+    while (root->next()) ++summary.rows_returned;
+    summary.exec_ms = milliseconds_since(execution_started);
+
+    StepActuals actuals;
+    collect_actuals(*optimized.result.plan, *root, actuals);
+    return format_explain_analyze(optimized.original, optimized.result, bound.scope, catalog, actuals, summary);
+}
+
+}  // namespace
+
+ExplainAnalyzeOutput Database::explain_analyze(std::string_view sql) {
+    Statement statement = parse_statement(sql);
+    const auto* select_stmt = std::get_if<Select>(&statement.node);
+    if (!select_stmt) throw DbError("EXPLAIN ANALYZE only works on SELECT");
+    return explain_analyze_select(catalog_, optimizer_, optimize_, *select_stmt);
+}
+
 QueryResult Database::execute(const Statement& statement) {
     if (const auto* s = std::get_if<CreateTable>(&statement.node)) return create_table(catalog_, *s);
     if (const auto* s = std::get_if<Insert>(&statement.node)) return insert(catalog_, *s);
     if (const auto* s = std::get_if<Select>(&statement.node)) return select(catalog_, optimizer_, optimize_, *s);
     if (const auto* s = std::get_if<Analyze>(&statement.node)) return analyze(catalog_, *s);
 
-    const auto& inner = std::get<Explain>(statement.node).inner->node;
-    const auto* select_stmt = std::get_if<Select>(&inner);
-    if (!select_stmt) throw DbError("EXPLAIN only works on SELECT");
+    const auto& explain = std::get<Explain>(statement.node);
+    const auto* select_stmt = std::get_if<Select>(&explain.inner->node);
+    if (!select_stmt) throw DbError(explain.analyze ? "EXPLAIN ANALYZE only works on SELECT" : "EXPLAIN only works on SELECT");
+    if (explain.analyze) return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, *select_stmt).text, {}};
+
     BoundSelect bound = bind_select(*select_stmt, catalog_);
-    PlanPtr original = plan_select(bound);
-    return {{}, {}, format_explain(original, optimizer_.optimize(original), bound.scope, catalog_), {}};
+    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);
+    return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_), {}};
 }
 
 }  // namespace cardinal

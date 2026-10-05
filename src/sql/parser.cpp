@@ -102,11 +102,13 @@ private:
                 advance();
                 return Statement{Analyze{name("a table name")}};
             }
-            case TokenKind::Explain:
+            case TokenKind::Explain: {
                 if (!allow_explain) break;
                 advance();
+                bool analyze = match(TokenKind::Analyze);
                 return Statement{
-                    Explain{std::make_unique<Statement>(statement(/*allow_explain=*/false))}};
+                    Explain{analyze, std::make_unique<Statement>(statement(/*allow_explain=*/false))}};
+            }
             default: break;
         }
         error_at(t, "expected a statement");
