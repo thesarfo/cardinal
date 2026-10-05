@@ -105,9 +105,15 @@ private:
             case TokenKind::Explain: {
                 if (!allow_explain) break;
                 advance();
-                bool analyze = match(TokenKind::Analyze);
+                // ANALYZE and VERBOSE, in either order
+                bool analyze = false, verbose = false;
+                for (;;) {
+                    if (!analyze && match(TokenKind::Analyze)) analyze = true;
+                    else if (!verbose && match(TokenKind::Verbose)) verbose = true;
+                    else break;
+                }
                 return Statement{
-                    Explain{analyze, std::make_unique<Statement>(statement(/*allow_explain=*/false))}};
+                    Explain{analyze, verbose, std::make_unique<Statement>(statement(/*allow_explain=*/false))}};
             }
             default: break;
         }

@@ -63,12 +63,27 @@ QueryResult analyze(Catalog& catalog, const Analyze& stmt) {
     return {{}, {}, "ANALYZE " + stmt.table + " (" + std::to_string(table->rows().size()) + " rows)", {}};
 }
 
-// Chooses how to run each step: the forced options if there are any, otherwise by cost.
-PhysicalPtr plan_physically(const Catalog& catalog, const BoundSelect& bound, const PlanPtr& logical,
+std::string describe_forced(const PlannerOptions& options) {
+    if (options.join_method == JoinMethod::NestedLoop) return "nested loop joins";
+    return std::string("hash joins, building from the ") + (options.build_left ? "left" : "right") + " input";
+}
+
+// Chooses how to run each step: the forced options if there are any, otherwise by cost, and
+// keeps what the planner looked at.
+VerboseInfo choose_physical(const Catalog& catalog, const BoundSelect& bound, const PlanPtr& logical,
                             const std::optional<PlannerOptions>& forced, const CostModel& model) {
-    if (forced) return plan_physical(*logical, *forced);
+    VerboseInfo info;
+    if (forced) {
+        info.physical = plan_physical(*logical, *forced);
+        info.forced = describe_forced(*forced);
+        return info;
+    }
     CardinalityEstimator estimator(bound.scope, catalog);
-    return plan_by_cost(logical, estimator, model).physical;
+    CostBasedPlan planned = plan_by_cost(logical, estimator, model);
+    info.physical = planned.physical;
+    info.cost = planned.cost;
+    info.trace = std::move(planned.trace);
+    return info;
 }
 
 QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize,
@@ -77,7 +92,7 @@ QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool 
     BoundSelect bound = bind_select(stmt, catalog);
     PlanPtr logical = plan_select(bound);
     if (optimize) logical = optimizer.optimize(logical).plan;
-    PhysicalPtr plan = plan_physically(catalog, bound, logical, forced, model);
+    PhysicalPtr plan = choose_physical(catalog, bound, logical, forced, model).physical;
     std::unique_ptr<Operator> root = build_operator(*plan, catalog);
 
     QueryResult result;
@@ -156,11 +171,12 @@ void collect_actuals(const LogicalPlan& step, const Operator& op, StepActuals& o
 
 ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOptimizer& optimizer, bool optimize,
                                             const std::optional<PlannerOptions>& forced, const CostModel& model,
-                                            const Select& stmt) {
+                                            bool verbose, const Select& stmt) {
     auto planning_started = std::chrono::steady_clock::now();
     BoundSelect bound = bind_select(stmt, catalog);
     Optimized optimized = optimize_for_explain(plan_select(bound), optimizer, optimize);
-    std::unique_ptr<Operator> root = build_operator(*plan_physically(catalog, bound, optimized.result.plan, forced, model), catalog);
+    VerboseInfo chosen = choose_physical(catalog, bound, optimized.result.plan, forced, model);
+    std::unique_ptr<Operator> root = build_operator(*chosen.physical, catalog);
     AnalyzeSummary summary;
     summary.plan_ms = milliseconds_since(planning_started);
 
@@ -170,7 +186,8 @@ ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOp
 
     StepActuals actuals;
     collect_actuals(*optimized.result.plan, *root, actuals);
-    return format_explain_analyze(optimized.original, optimized.result, bound.scope, catalog, actuals, summary);
+    return format_explain_analyze(optimized.original, optimized.result, bound.scope, catalog, actuals, summary,
+                                  verbose ? &chosen : nullptr);
 }
 
 }  // namespace
@@ -179,7 +196,7 @@ ExplainAnalyzeOutput Database::explain_analyze(std::string_view sql) {
     Statement statement = parse_statement(sql);
     const auto* select_stmt = std::get_if<Select>(&statement.node);
     if (!select_stmt) throw DbError("EXPLAIN ANALYZE only works on SELECT");
-    return explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, *select_stmt);
+    return explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, false, *select_stmt);
 }
 
 QueryResult Database::execute(const Statement& statement) {
@@ -191,11 +208,14 @@ QueryResult Database::execute(const Statement& statement) {
     const auto& explain = std::get<Explain>(statement.node);
     const auto* select_stmt = std::get_if<Select>(&explain.inner->node);
     if (!select_stmt) throw DbError(explain.analyze ? "EXPLAIN ANALYZE only works on SELECT" : "EXPLAIN only works on SELECT");
-    if (explain.analyze) return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, *select_stmt).text, {}};
+    if (explain.analyze)
+        return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, explain.verbose, *select_stmt).text, {}};
 
     BoundSelect bound = bind_select(*select_stmt, catalog_);
     Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);
-    return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_), {}};
+    if (!explain.verbose) return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_), {}};
+    VerboseInfo chosen = choose_physical(catalog_, bound, optimized.result.plan, forced_planner_, *cost_model_);
+    return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_, &chosen), {}};
 }
 
 }  // namespace cardinal

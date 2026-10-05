@@ -119,6 +119,7 @@ struct Analyze {
 struct Statement;
 struct Explain {
     bool analyze = false;  // EXPLAIN ANALYZE: also run the query and show the real row counts
+    bool verbose = false;  // EXPLAIN VERBOSE: also show every way to run each step, with its cost
     std::unique_ptr<Statement> inner;
 };
 

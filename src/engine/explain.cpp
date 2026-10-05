@@ -1,10 +1,13 @@
 #include "engine/explain.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <set>
 
 #include "logical/plan_printer.h"
+#include "logical/plan_util.h"
+#include "physical/physical_printer.h"
 #include "stats/analyze.h"
 #include "stats/cardinality.h"
 #include "stats/q_error.h"
@@ -13,11 +16,12 @@ namespace cardinal {
 
 namespace {
 
-std::string indented(const std::string& text) {
-    std::string out = "  ";
+std::string indented(const std::string& text, int spaces = 2) {
+    std::string pad(static_cast<std::size_t>(spaces), ' ');
+    std::string out = pad;
     for (char c : text) {
         out += c;
-        if (c == '\n') out += "  ";
+        if (c == '\n') out += pad;
     }
     return out;
 }
@@ -28,13 +32,18 @@ std::string estimate_text(double rows) {
     return std::to_string(std::max<long long>(1, std::llround(rows)));
 }
 
-}  // namespace
+std::string first_line(const std::string& text) { return text.substr(0, text.find('\n')); }
 
-namespace {
+std::string fixed(double value, int decimals) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.*f", decimals, value);
+    return buf;
+}
 
-struct Sections {
-    std::string original, rules, statistics;
-};
+std::string cost_text(double cost) {
+    if (cost == 0) return "0";
+    return fixed(cost, cost < 0.01 ? 4 : 2);
+}
 
 std::string rules_text(const OptimizeResult& result) {
     std::string out;
@@ -67,32 +76,61 @@ std::string statistics_text(const Scope& scope, const Catalog& catalog) {
     return out;
 }
 
-std::string first_line(const std::string& text) { return text.substr(0, text.find('\n')); }
-
-std::string fixed(double value, int decimals) {
-    char buf[32];
-    std::snprintf(buf, sizeof buf, "%.*f", decimals, value);
-    return buf;
+// The options of every step, laid out like the plan: each step, then its ways to run below it.
+void write_options(const PlanPtr& step, const Scope& scope, CardinalityEstimator& estimator,
+                   const std::unordered_map<const LogicalPlan*, const StepOptions*>& by_step, std::size_t name_width,
+                   int depth, std::string& out) {
+    std::string indent(static_cast<std::size_t>(depth) * 2 + 2, ' ');
+    out += indent + first_line(print(*step, scope)) + "  est_rows=" + estimate_text(estimator.rows(step)) + "\n";
+    if (auto it = by_step.find(step.get()); it != by_step.end()) {
+        for (const PlanOption& option : it->second->options) {
+            out += indent + "  " + (option.chosen ? "* " : "  ") + option.name +
+                   std::string(name_width - option.name.size(), ' ') + "  cost " + cost_text(option.cost.total) + "\n";
+        }
+    }
+    for (const PlanPtr& child : children_of(*step)) write_options(child, scope, estimator, by_step, name_width, depth + 1, out);
 }
+
+std::string options_text(const PlanPtr& plan, const Scope& scope, CardinalityEstimator& estimator, const VerboseInfo& verbose) {
+    if (!verbose.forced.empty())
+        return "  The join method was forced (" + verbose.forced + "), so no costs were compared.\n";
+
+    std::unordered_map<const LogicalPlan*, const StepOptions*> by_step;
+    std::size_t width = 0;
+    for (const StepOptions& step : verbose.trace) {
+        by_step[step.step] = &step;
+        for (const PlanOption& option : step.options) width = std::max(width, option.name.size());
+    }
+    std::string out = "  (cost is the estimated work for the step and everything below it, in made-up units; lower is better; * marks the one chosen)\n";
+    write_options(plan, scope, estimator, by_step, width, 0, out);
+    out += "  Total estimated cost: " + cost_text(verbose.cost.total) + "\n";
+    return out;
+}
+
+std::string chosen_text(const VerboseInfo& verbose) { return indented(print(*verbose.physical)) + "\n"; }
 
 }  // namespace
 
 std::string format_explain(const PlanPtr& original, const OptimizeResult& result, const Scope& scope,
-                           const Catalog& catalog) {
+                           const Catalog& catalog, const VerboseInfo* verbose) {
     // One estimator for both plans: it saves what it works out, and they share steps.
     CardinalityEstimator estimator(scope, catalog);
     NodeNote note = [&](const LogicalPlan& step) { return "  est_rows=" + estimate_text(estimator.rows_of(step)); };
 
     std::string out = "Original plan\n" + indented(print(*original, scope, note)) + "\n\nRules fired\n" + rules_text(result);
-    out += "\nFinal plan\n" + indented(print(*result.plan, scope, note));
-    out += "\n\nStatistics\n" + statistics_text(scope, catalog);
+    out += "\nFinal plan\n" + indented(print(*result.plan, scope, note)) + "\n";
+    if (verbose) {
+        out += "\nWays to run it\n" + options_text(result.plan, scope, estimator, *verbose);
+        out += "\nChosen plan\n" + chosen_text(*verbose);
+    }
+    out += "\nStatistics\n" + statistics_text(scope, catalog);
     out.pop_back();
     return out;
 }
 
 ExplainAnalyzeOutput format_explain_analyze(const PlanPtr& original, const OptimizeResult& result, const Scope& scope,
                                             const Catalog& catalog, const StepActuals& actuals,
-                                            const AnalyzeSummary& summary) {
+                                            const AnalyzeSummary& summary, const VerboseInfo* verbose) {
     CardinalityEstimator estimator(scope, catalog);
     NodeNote estimate_only = [&](const LogicalPlan& step) { return "  est_rows=" + estimate_text(estimator.rows_of(step)); };
 
@@ -114,13 +152,20 @@ ExplainAnalyzeOutput format_explain_analyze(const PlanPtr& original, const Optim
                "  q_error=" + fixed(error, 2) + "  time=" + fixed(it->second.self_ms, 3) + "ms";
     };
 
-    std::string final_plan = print(*result.plan, scope, with_actuals);
+    std::string with_real_counts = print(*result.plan, scope, with_actuals);
     output.root_estimate = estimator.rows(result.plan);
     auto root = actuals.find(result.plan.get());
     output.root_actual = root == actuals.end() ? 0 : root->second.rows;
 
     std::string out = "Original plan\n" + indented(print(*original, scope, estimate_only)) + "\n\nRules fired\n" + rules_text(result);
-    out += "\nFinal plan\n" + indented(final_plan);
+    if (verbose) {
+        out += "\nFinal plan\n" + indented(print(*result.plan, scope, estimate_only));
+        out += "\n\nWays to run it\n" + options_text(result.plan, scope, estimator, *verbose);
+        out += "\nChosen plan\n" + chosen_text(*verbose);
+        out += "\nActual run\n" + indented(with_real_counts);
+    } else {
+        out += "\nFinal plan\n" + indented(with_real_counts);
+    }
     out += "\n\nExecution\n  planning " + fixed(summary.plan_ms, 2) + " ms, execution " + fixed(summary.exec_ms, 2) + " ms, " +
            std::to_string(summary.rows_returned) + (summary.rows_returned == 1 ? " row" : " rows") + " returned\n";
     if (worst_step) {

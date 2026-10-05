@@ -91,6 +91,6 @@ TEST_CASE("print: explain") {
     Select sel;
     sel.items.push_back({Star{}});
     sel.from.table = "t";
-    Explain ex{false, std::make_unique<Statement>(Statement{std::move(sel)})};
+    Explain ex{false, false, std::make_unique<Statement>(Statement{std::move(sel)})};
     REQUIRE(print(Statement{std::move(ex)}) == "(explain (select (star) (from t)))");
 }
