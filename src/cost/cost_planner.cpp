@@ -1,5 +1,6 @@
 #include "cost/cost_planner.h"
 
+#include <algorithm>
 #include <unordered_map>
 
 #include "logical/plan_util.h"
@@ -14,6 +15,31 @@ template <class... Ts>
 struct Overloaded : Ts... {
     using Ts::operator()...;
 };
+
+struct JoinOptions {
+    std::vector<PlanOption> options;  // each costed alone, without its inputs
+    std::vector<JoinChoice> choices;  // the same order
+};
+
+// The ways to run `join`: a nested loop join, and a hash join from either side when the
+// condition has an equality between the two inputs.
+JoinOptions join_options(const PlanPtr& node, const LogicalJoin& join, CardinalityEstimator& estimator, const CostModel& model) {
+    double left = estimator.rows(join.left), right = estimator.rows(join.right), out = estimator.rows(node);
+    JoinOptions joins;
+    joins.options.push_back({"NestedLoopJoin", model.nested_loop_join(left, right, out)});
+    joins.choices.push_back({JoinMethod::NestedLoop, false});
+
+    JoinKeys keys = split_join_condition(join.condition, output_columns(*join.left), output_columns(*join.right));
+    if (!keys.keys.empty()) {
+        joins.options.push_back({"HashJoin (build right)", model.hash_join(right, left, out)});
+        joins.choices.push_back({JoinMethod::Hash, false});
+        joins.options.push_back({"HashJoin (build left)", model.hash_join(left, right, out)});
+        joins.choices.push_back({JoinMethod::Hash, true});
+    } else {
+        joins.options[0].note = "no equality between the two inputs, so no hash join";
+    }
+    return joins;
+}
 
 class Pricer {
 public:
@@ -72,28 +98,15 @@ private:
 
     Cost price_join(const PlanPtr& node, const LogicalJoin& join) {
         Cost inputs = price(join.left) + price(join.right);
-        double left = estimator_.rows(join.left), right = estimator_.rows(join.right), out = estimator_.rows(node);
-
-        std::vector<PlanOption> options;
-        std::vector<JoinChoice> choice_of;
-        options.push_back({"NestedLoopJoin", inputs + model_.nested_loop_join(left, right, out)});
-        choice_of.push_back({JoinMethod::NestedLoop, false});
-
-        JoinKeys keys = split_join_condition(join.condition, output_columns(*join.left), output_columns(*join.right));
-        if (!keys.keys.empty()) {
-            options.push_back({"HashJoin (build right)", inputs + model_.hash_join(right, left, out)});
-            choice_of.push_back({JoinMethod::Hash, false});
-            options.push_back({"HashJoin (build left)", inputs + model_.hash_join(left, right, out)});
-            choice_of.push_back({JoinMethod::Hash, true});
-        } else {
-            options[0].note = "no equality between the two inputs, so no hash join";
-        }
+        JoinOptions joins = join_options(node, join, estimator_, model_);
+        std::vector<PlanOption>& options = joins.options;
+        for (PlanOption& option : options) option.cost = inputs + option.cost;
 
         std::size_t best = 0;
         for (std::size_t i = 1; i < options.size(); ++i)
             if (options[i].cost < options[best].cost) best = i;
         options[best].chosen = true;
-        choices[&join] = choice_of[best];
+        choices[&join] = joins.choices[best];
         Cost cost = options[best].cost;
         trace.push_back({node.get(), std::move(options)});
         return cost;
@@ -104,6 +117,13 @@ private:
 };
 
 }  // namespace
+
+Cost join_step_cost(const PlanPtr& join, CardinalityEstimator& estimator, const CostModel& model) {
+    JoinOptions joins = join_options(join, std::get<LogicalJoin>(join->node), estimator, model);
+    Cost best = joins.options[0].cost;
+    for (const PlanOption& option : joins.options) best = std::min(best, option.cost);
+    return best;
+}
 
 CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model) {
     Pricer pricer(estimator, model);

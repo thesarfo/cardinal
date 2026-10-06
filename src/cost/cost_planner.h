@@ -45,4 +45,9 @@ struct CostBasedPlan {
 // choice made.
 CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model);
 
+// What the join step `join` costs on its own, not counting its inputs, run the cheapest way.
+// plan_by_cost adds this to the cost of the inputs, so a join order search that keeps the
+// cost of each group gets the same total that plan_by_cost would.
+Cost join_step_cost(const PlanPtr& join, CardinalityEstimator& estimator, const CostModel& model);
+
 }  // namespace cardinal

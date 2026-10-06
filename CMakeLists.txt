@@ -20,6 +20,7 @@ add_library(cardinal_core
   src/common/value.cpp
   src/cost/cost_model.cpp
   src/cost/cost_planner.cpp
+  src/cost/join_order.cpp
   src/common/version.cpp
   src/engine/answer_checker.cpp
   src/engine/database.cpp

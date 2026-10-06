@@ -92,6 +92,49 @@ std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan) {
     return graph;
 }
 
+PlanPtr relation_with_filters(const JoinGraph& graph, std::size_t table) {
+    std::vector<BoundExprPtr> own;
+    for (const GraphPredicate& p : graph.predicates)
+        if (p.kind == PredicateKind::SingleTable && p.tables == std::uint32_t{1} << table) own.push_back(p.expr);
+    PlanPtr plan = graph.relations[table].plan;
+    return own.empty() ? plan : make(LogicalFilter{plan, and_all(own)});
+}
+
+PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t joined, std::size_t table, PlanPtr right) {
+    const std::uint32_t after = joined | std::uint32_t{1} << table;
+    std::vector<BoundExprPtr> condition;
+    for (const GraphPredicate& p : graph.predicates) {
+        if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
+        if ((p.tables & ~after) == 0 && (p.tables & ~joined) != 0) condition.push_back(p.expr);
+    }
+    return condition.empty() ? make(LogicalJoin{std::move(left), std::move(right), JoinType::Cross, nullptr})
+                             : make(LogicalJoin{std::move(left), std::move(right), JoinType::Inner, and_all(condition)});
+}
+
+PlanPtr with_constant_filters(const JoinGraph& graph, PlanPtr tree) {
+    // Conditions that read no table are the same wherever they go.
+    std::vector<BoundExprPtr> constants;
+    for (const GraphPredicate& p : graph.predicates)
+        if (p.tables == 0) constants.push_back(p.expr);
+    return constants.empty() ? tree : make(LogicalFilter{std::move(tree), and_all(constants)});
+}
+
+bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
+    const std::uint32_t bit = std::uint32_t{1} << table, after = joined | bit;
+    for (const GraphPredicate& p : graph.predicates) {
+        if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
+        if ((p.tables & ~after) == 0 && (p.tables & bit) != 0 && (p.tables & joined) != 0) return true;
+    }
+    return false;
+}
+
+bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
+    if (connects(graph, joined, table)) return false;
+    for (std::size_t other = 0; other < graph.relations.size(); ++other)
+        if ((joined >> other & 1) == 0 && connects(graph, joined, other)) return true;
+    return false;
+}
+
 PlanPtr build_join_tree(const JoinGraph& graph, const std::vector<std::size_t>& order) {
     const std::size_t n = graph.relations.size();
     std::vector<std::size_t> sorted = order;
@@ -100,35 +143,13 @@ PlanPtr build_join_tree(const JoinGraph& graph, const std::vector<std::size_t>& 
     std::iota(expected.begin(), expected.end(), std::size_t{0});
     if (sorted != expected) throw std::invalid_argument("the order must list every table exactly once");
 
-    // A table, with its own filters right on top of it.
-    auto leaf = [&](std::size_t i) {
-        std::vector<BoundExprPtr> own;
-        for (const GraphPredicate& p : graph.predicates)
-            if (p.kind == PredicateKind::SingleTable && p.tables == std::uint32_t{1} << i) own.push_back(p.expr);
-        PlanPtr plan = graph.relations[i].plan;
-        return own.empty() ? plan : make(LogicalFilter{plan, and_all(own)});
-    };
-
-    PlanPtr tree = leaf(order[0]);
+    PlanPtr tree = relation_with_filters(graph, order[0]);
     std::uint32_t joined = std::uint32_t{1} << order[0];
     for (std::size_t step = 1; step < n; ++step) {
-        const std::uint32_t before = joined;
+        tree = join_onto(graph, tree, joined, order[step], relation_with_filters(graph, order[step]));
         joined |= std::uint32_t{1} << order[step];
-        std::vector<BoundExprPtr> condition;
-        for (const GraphPredicate& p : graph.predicates) {
-            if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
-            if ((p.tables & ~joined) == 0 && (p.tables & ~before) != 0) condition.push_back(p.expr);
-        }
-        PlanPtr right = leaf(order[step]);
-        tree = condition.empty() ? make(LogicalJoin{tree, right, JoinType::Cross, nullptr})
-                                 : make(LogicalJoin{tree, right, JoinType::Inner, and_all(condition)});
     }
-
-    // Conditions that read no table are the same wherever they go.
-    std::vector<BoundExprPtr> constants;
-    for (const GraphPredicate& p : graph.predicates)
-        if (p.tables == 0) constants.push_back(p.expr);
-    return constants.empty() ? tree : make(LogicalFilter{tree, and_all(constants)});
+    return with_constant_filters(graph, tree);
 }
 
 PlanPtr build_join_tree(const JoinGraph& graph) {
