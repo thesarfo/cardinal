@@ -1,0 +1,140 @@
+#include "optimizer/join_graph.h"
+
+#include <algorithm>
+#include <bit>
+#include <numeric>
+#include <stdexcept>
+
+#include "logical/plan_util.h"
+#include "optimizer/conjuncts.h"
+
+namespace cardinal {
+
+namespace {
+
+PlanPtr make(auto node) { return std::make_shared<const LogicalPlan>(LogicalPlan{std::move(node)}); }
+
+bool is_join_region(const PlanPtr& plan) {
+    if (const auto* join = std::get_if<LogicalJoin>(&plan->node)) return join->type == JoinType::Inner || join->type == JoinType::Cross;
+    if (const auto* filter = std::get_if<LogicalFilter>(&plan->node)) return is_join_region(filter->input);
+    return false;
+}
+
+struct Collected {
+    std::vector<GraphRelation> relations;
+    std::vector<BoundExprPtr> parts;  // the AND-ed parts, in the order met
+};
+
+void collect(const PlanPtr& plan, Collected& out) {
+    if (const auto* join = std::get_if<LogicalJoin>(&plan->node); join && is_join_region(plan)) {
+        collect(join->left, out);
+        collect(join->right, out);
+        if (join->condition)
+            for (BoundExprPtr& part : split_ands(join->condition)) out.parts.push_back(std::move(part));
+        return;
+    }
+    if (const auto* filter = std::get_if<LogicalFilter>(&plan->node); filter && is_join_region(plan)) {
+        collect(filter->input, out);
+        for (BoundExprPtr& part : split_ands(filter->predicate)) out.parts.push_back(std::move(part));
+        return;
+    }
+    out.relations.push_back({plan, output_columns(*plan)});
+}
+
+// The one table `expr` reads, or nullopt if it reads none or several.
+std::optional<std::size_t> only_table(const BoundExpr& expr, const std::vector<GraphRelation>& relations) {
+    std::optional<std::size_t> found;
+    for (ColumnId column : columns_used(expr)) {
+        for (std::size_t i = 0; i < relations.size(); ++i) {
+            const auto& cols = relations[i].columns;
+            if (std::find(cols.begin(), cols.end(), column) == cols.end()) continue;
+            if (found && *found != i) return std::nullopt;
+            found = i;
+        }
+    }
+    return found;
+}
+
+}  // namespace
+
+std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan) {
+    if (!is_join_region(plan)) return std::nullopt;
+    Collected collected;
+    collect(plan, collected);
+    if (collected.relations.size() < 2 || collected.relations.size() > kMaxGraphRelations) return std::nullopt;
+
+    JoinGraph graph;
+    graph.relations = std::move(collected.relations);
+    for (BoundExprPtr& part : collected.parts) {
+        std::uint32_t tables = 0;
+        for (ColumnId column : columns_used(*part)) {
+            bool found = false;
+            for (std::size_t i = 0; i < graph.relations.size(); ++i) {
+                const auto& cols = graph.relations[i].columns;
+                if (std::find(cols.begin(), cols.end(), column) == cols.end()) continue;
+                tables |= std::uint32_t{1} << i;
+                found = true;
+                break;
+            }
+            if (!found) return std::nullopt;
+        }
+
+        PredicateKind kind = PredicateKind::Other;
+        if (std::popcount(tables) == 1) {
+            kind = PredicateKind::SingleTable;
+        } else if (const auto* b = std::get_if<BoundBinary>(&part->node); b && b->op == BinaryOp::Eq) {
+            std::optional<std::size_t> l = only_table(*b->left, graph.relations);
+            std::optional<std::size_t> r = only_table(*b->right, graph.relations);
+            if (l && r && *l != *r) kind = PredicateKind::Edge;
+        }
+        graph.predicates.push_back({std::move(part), tables, kind});
+    }
+    return graph;
+}
+
+PlanPtr build_join_tree(const JoinGraph& graph, const std::vector<std::size_t>& order) {
+    const std::size_t n = graph.relations.size();
+    std::vector<std::size_t> sorted = order;
+    std::sort(sorted.begin(), sorted.end());
+    std::vector<std::size_t> expected(n);
+    std::iota(expected.begin(), expected.end(), std::size_t{0});
+    if (sorted != expected) throw std::invalid_argument("the order must list every table exactly once");
+
+    // A table, with its own filters right on top of it.
+    auto leaf = [&](std::size_t i) {
+        std::vector<BoundExprPtr> own;
+        for (const GraphPredicate& p : graph.predicates)
+            if (p.kind == PredicateKind::SingleTable && p.tables == std::uint32_t{1} << i) own.push_back(p.expr);
+        PlanPtr plan = graph.relations[i].plan;
+        return own.empty() ? plan : make(LogicalFilter{plan, and_all(own)});
+    };
+
+    PlanPtr tree = leaf(order[0]);
+    std::uint32_t joined = std::uint32_t{1} << order[0];
+    for (std::size_t step = 1; step < n; ++step) {
+        const std::uint32_t before = joined;
+        joined |= std::uint32_t{1} << order[step];
+        std::vector<BoundExprPtr> condition;
+        for (const GraphPredicate& p : graph.predicates) {
+            if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
+            if ((p.tables & ~joined) == 0 && (p.tables & ~before) != 0) condition.push_back(p.expr);
+        }
+        PlanPtr right = leaf(order[step]);
+        tree = condition.empty() ? make(LogicalJoin{tree, right, JoinType::Cross, nullptr})
+                                 : make(LogicalJoin{tree, right, JoinType::Inner, and_all(condition)});
+    }
+
+    // Conditions that read no table are the same wherever they go.
+    std::vector<BoundExprPtr> constants;
+    for (const GraphPredicate& p : graph.predicates)
+        if (p.tables == 0) constants.push_back(p.expr);
+    return constants.empty() ? tree : make(LogicalFilter{tree, and_all(constants)});
+}
+
+PlanPtr build_join_tree(const JoinGraph& graph) {
+    std::vector<std::size_t> order(graph.relations.size());
+    std::iota(order.begin(), order.end(), std::size_t{0});
+    return build_join_tree(graph, order);
+}
+
+}  // namespace cardinal

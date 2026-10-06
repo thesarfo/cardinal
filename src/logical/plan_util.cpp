@@ -2,6 +2,8 @@
 
 #include <stdexcept>
 
+#include "binder/bound_expr.h"
+
 namespace cardinal {
 
 namespace {
@@ -68,6 +70,61 @@ PlanPtr with_children(const LogicalPlan& node, std::vector<PlanPtr> children) {
             },
         },
         node.node);
+}
+
+namespace {
+
+bool expr_same(const BoundExprPtr& a, const BoundExprPtr& b) {
+    if (a == b) return true;
+    return a && b && expr_equal(*a, *b);
+}
+
+bool keys_same(const std::vector<SortKey>& a, const std::vector<SortKey>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i].descending != b[i].descending || !expr_same(a[i].expr, b[i].expr)) return false;
+    return true;
+}
+
+bool items_same(const std::vector<ProjectItem>& a, const std::vector<ProjectItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i].name != b[i].name || !expr_same(a[i].expr, b[i].expr)) return false;
+    return true;
+}
+
+// Compares the node itself, not its inputs.
+bool node_same(const LogicalPlan& a, const LogicalPlan& b) {
+    if (a.node.index() != b.node.index()) return false;
+    return std::visit(
+        Overloaded{
+            [&](const LogicalScan& x) {
+                const auto& y = std::get<LogicalScan>(b.node);
+                return x.table == y.table && x.alias == y.alias && x.columns == y.columns;
+            },
+            [&](const LogicalEmpty& x) { return x.columns == std::get<LogicalEmpty>(b.node).columns; },
+            [&](const LogicalFilter& x) { return expr_same(x.predicate, std::get<LogicalFilter>(b.node).predicate); },
+            [&](const LogicalProject& x) { return items_same(x.items, std::get<LogicalProject>(b.node).items); },
+            [&](const LogicalSort& x) { return keys_same(x.keys, std::get<LogicalSort>(b.node).keys); },
+            [&](const LogicalLimit& x) { return x.count == std::get<LogicalLimit>(b.node).count; },
+            [&](const LogicalPrune& x) { return x.columns == std::get<LogicalPrune>(b.node).columns; },
+            [&](const LogicalJoin& x) {
+                const auto& y = std::get<LogicalJoin>(b.node);
+                return x.type == y.type && expr_same(x.condition, y.condition);
+            },
+        },
+        a.node);
+}
+
+}  // namespace
+
+bool plan_equal(const PlanPtr& a, const PlanPtr& b) {
+    if (a == b) return true;
+    if (!a || !b || !node_same(*a, *b)) return false;
+    std::vector<PlanPtr> x = children_of(*a), y = children_of(*b);
+    for (std::size_t i = 0; i < x.size(); ++i)
+        if (!plan_equal(x[i], y[i])) return false;
+    return true;
 }
 
 }  // namespace cardinal

@@ -20,4 +20,8 @@ PlanPtr with_children(const LogicalPlan& node, std::vector<PlanPtr> children);
 // not columns, so it gives none. A Join gives the left's columns then the right's.
 std::vector<ColumnId> output_columns(const LogicalPlan& node);
 
+// True if the two plans have the same shape, tables, columns and expressions. Plans that
+// share a pointer are equal without looking inside.
+bool plan_equal(const PlanPtr& a, const PlanPtr& b);
+
 }  // namespace cardinal
