@@ -11,6 +11,7 @@ struct Group {
     PlanPtr plan;
     Cost cost;
     std::vector<std::size_t> order;
+    double rows = 0;  // the same whichever order built the group, so worked out once
 };
 
 }  // namespace
@@ -25,7 +26,7 @@ std::optional<JoinOrder> choose_join_order(const JoinGraph& graph, CardinalityEs
     for (std::size_t i = 0; i < n; ++i) {
         tables[i] = relation_with_filters(graph, i);
         table_cost[i] = plan_by_cost(tables[i], estimator, model).cost;
-        best[std::size_t{1} << i] = {tables[i], table_cost[i], {i}};
+        best[std::size_t{1} << i] = {tables[i], table_cost[i], {i}, estimator.rows(tables[i])};
     }
 
     // A group minus one table is a smaller number, so counting up finishes a group before
@@ -35,16 +36,27 @@ std::optional<JoinOrder> choose_join_order(const JoinGraph& graph, CardinalityEs
     for (std::uint32_t group = 1; group < all; ++group) {
         const Group& from = best[group];
         if (!from.plan) continue;
+        // Tables something joins to the group. If there are none, any table may come next.
+        std::uint32_t next = 0;
+        for (std::size_t t = 0; t < n; ++t)
+            if (!(group >> t & 1) && connects(graph, group, t)) next |= std::uint32_t{1} << t;
+        if (next == 0) next = all & ~group;
+
         for (std::size_t t = 0; t < n; ++t) {
-            if ((group >> t & 1) || cross_join_can_wait(graph, group, t)) continue;
-            PlanPtr joined = join_onto(graph, from.plan, group, t, tables[t]);
-            Cost cost = from.cost + table_cost[t] + join_step_cost(joined, estimator, model);
+            if (!(next >> t & 1)) continue;
+            // The plan is only built for the first way into a group, to estimate its rows, and
+            // for a way that wins.
+            Group& into = best[group | std::uint32_t{1} << t];
+            PlanPtr joined = into.plan ? nullptr : join_onto(graph, from.plan, group, t, tables[t]);
+            const double rows = joined ? estimator.rows(joined) : into.rows;
+            const double right = best[std::size_t{1} << t].rows;
+            Cost cost = from.cost + table_cost[t] + join_step_cost(hash_joinable(graph, group, t), from.rows, right, rows, model);
             ++chosen.joins_priced;
 
-            Group& into = best[group | std::uint32_t{1} << t];
             if (into.plan && !(cost < into.cost)) continue;
-            into.plan = joined;
+            into.plan = joined ? joined : join_onto(graph, from.plan, group, t, tables[t]);
             into.cost = cost;
+            into.rows = rows;
             into.order = from.order;
             into.order.push_back(t);
         }

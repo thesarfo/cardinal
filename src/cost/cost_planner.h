@@ -45,7 +45,8 @@ struct CostBasedPlan {
 // choice made.
 CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model);
 
-// The cheapest way to run `join`, not counting its inputs.
-Cost join_step_cost(const PlanPtr& join, CardinalityEstimator& estimator, const CostModel& model);
+// The cheapest way to run a join, not counting its inputs. `hashable` says whether its
+// condition has an equality between the two inputs.
+Cost join_step_cost(bool hashable, double left_rows, double right_rows, double out_rows, const CostModel& model);
 
 }  // namespace cardinal

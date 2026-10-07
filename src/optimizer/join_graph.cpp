@@ -60,6 +60,21 @@ std::optional<std::size_t> only_table(const BoundExpr& expr, const std::vector<G
     return found;
 }
 
+// Bit i set if `expr` reads relation i. Nothing if it reads a column no relation has.
+std::optional<std::uint32_t> tables_read(const BoundExpr& expr, const std::vector<GraphRelation>& relations) {
+    std::uint32_t tables = 0;
+    for (ColumnId column : columns_used(expr)) {
+        bool found = false;
+        for (std::size_t i = 0; i < relations.size() && !found; ++i) {
+            const auto& cols = relations[i].columns;
+            found = std::find(cols.begin(), cols.end(), column) != cols.end();
+            if (found) tables |= std::uint32_t{1} << i;
+        }
+        if (!found) return std::nullopt;
+    }
+    return tables;
+}
+
 }  // namespace
 
 std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan) {
@@ -71,28 +86,21 @@ std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan) {
     JoinGraph graph;
     graph.relations = std::move(collected.relations);
     for (BoundExprPtr& part : collected.parts) {
-        std::uint32_t tables = 0;
-        for (ColumnId column : columns_used(*part)) {
-            bool found = false;
-            for (std::size_t i = 0; i < graph.relations.size(); ++i) {
-                const auto& cols = graph.relations[i].columns;
-                if (std::find(cols.begin(), cols.end(), column) == cols.end()) continue;
-                tables |= std::uint32_t{1} << i;
-                found = true;
-                break;
-            }
-            if (!found) return std::nullopt;
-        }
+        std::optional<std::uint32_t> tables = tables_read(*part, graph.relations);
+        if (!tables) return std::nullopt;
 
         PredicateKind kind = PredicateKind::Other;
-        if (std::popcount(tables) == 1) {
+        std::uint32_t eq_left = 0, eq_right = 0;
+        if (std::popcount(*tables) == 1) {
             kind = PredicateKind::SingleTable;
         } else if (const auto* b = std::get_if<BoundBinary>(&part->node); b && b->op == BinaryOp::Eq) {
             std::optional<std::size_t> l = only_table(*b->left, graph.relations);
             std::optional<std::size_t> r = only_table(*b->right, graph.relations);
             if (l && r && *l != *r) kind = PredicateKind::Edge;
+            eq_left = *tables_read(*b->left, graph.relations);
+            eq_right = *tables_read(*b->right, graph.relations);
         }
-        graph.predicates.push_back({std::move(part), tables, kind});
+        graph.predicates.push_back({std::move(part), *tables, kind, eq_left, eq_right});
     }
     return graph;
 }
@@ -129,6 +137,17 @@ bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
     for (const GraphPredicate& p : graph.predicates) {
         if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
         if ((p.tables & ~after) == 0 && (p.tables & bit) != 0 && (p.tables & joined) != 0) return true;
+    }
+    return false;
+}
+
+bool hash_joinable(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
+    const std::uint32_t bit = std::uint32_t{1} << table, after = joined | bit;
+    auto within = [](std::uint32_t tables, std::uint32_t mask) { return tables != 0 && (tables & ~mask) == 0; };
+    for (const GraphPredicate& p : graph.predicates) {
+        if (p.kind == PredicateKind::SingleTable || (p.tables & ~after) != 0 || (p.tables & bit) == 0) continue;
+        if ((within(p.eq_left, joined) && within(p.eq_right, bit)) || (within(p.eq_left, bit) && within(p.eq_right, joined)))
+            return true;
     }
     return false;
 }

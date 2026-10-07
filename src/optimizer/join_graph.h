@@ -32,6 +32,7 @@ struct GraphPredicate {
     BoundExprPtr expr;
     std::uint32_t tables;  // bit i is set if relation i is read
     PredicateKind kind;
+    std::uint32_t eq_left = 0, eq_right = 0;  // for an equality, the tables each side reads
 };
 
 struct JoinGraph {
@@ -54,6 +55,10 @@ PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t joined, st
 PlanPtr with_constant_filters(const JoinGraph& graph, PlanPtr tree);
 
 bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
+
+// True if join_onto would give a condition a hash join can use: an equality with one side
+// reading only `joined` and the other only `table`. The same test split_join_condition makes.
+bool hash_joinable(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
 
 // True if nothing joins `table` to the group but something joins another table to it.
 bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t joined, std::size_t table);

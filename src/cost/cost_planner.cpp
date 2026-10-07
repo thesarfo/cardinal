@@ -21,14 +21,12 @@ struct JoinOptions {
     std::vector<JoinChoice> choices;
 };
 
-JoinOptions join_options(const PlanPtr& node, const LogicalJoin& join, CardinalityEstimator& estimator, const CostModel& model) {
-    double left = estimator.rows(join.left), right = estimator.rows(join.right), out = estimator.rows(node);
+JoinOptions join_options(bool hashable, double left, double right, double out, const CostModel& model) {
     JoinOptions joins;
     joins.options.push_back({"NestedLoopJoin", model.nested_loop_join(left, right, out)});
     joins.choices.push_back({JoinMethod::NestedLoop, false});
 
-    JoinKeys keys = split_join_condition(join.condition, output_columns(*join.left), output_columns(*join.right));
-    if (!keys.keys.empty()) {
+    if (hashable) {
         joins.options.push_back({"HashJoin (build right)", model.hash_join(right, left, out)});
         joins.choices.push_back({JoinMethod::Hash, false});
         joins.options.push_back({"HashJoin (build left)", model.hash_join(left, right, out)});
@@ -96,7 +94,8 @@ private:
 
     Cost price_join(const PlanPtr& node, const LogicalJoin& join) {
         Cost inputs = price(join.left) + price(join.right);
-        JoinOptions joins = join_options(node, join, estimator_, model_);
+        bool hashable = !split_join_condition(join.condition, output_columns(*join.left), output_columns(*join.right)).keys.empty();
+        JoinOptions joins = join_options(hashable, estimator_.rows(join.left), estimator_.rows(join.right), estimator_.rows(node), model_);
         std::vector<PlanOption>& options = joins.options;
         for (PlanOption& option : options) option.cost = inputs + option.cost;
 
@@ -116,8 +115,8 @@ private:
 
 }  // namespace
 
-Cost join_step_cost(const PlanPtr& join, CardinalityEstimator& estimator, const CostModel& model) {
-    JoinOptions joins = join_options(join, std::get<LogicalJoin>(join->node), estimator, model);
+Cost join_step_cost(bool hashable, double left_rows, double right_rows, double out_rows, const CostModel& model) {
+    JoinOptions joins = join_options(hashable, left_rows, right_rows, out_rows, model);
     Cost best = joins.options[0].cost;
     for (const PlanOption& option : joins.options) best = std::min(best, option.cost);
     return best;

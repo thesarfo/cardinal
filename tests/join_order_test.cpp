@@ -11,6 +11,7 @@
 #include "engine/answer_checker.h"
 #include "engine/database.h"
 #include "logical/plan_util.h"
+#include "physical/join_keys.h"
 #include "logical/planner.h"
 #include "sql/parser.h"
 
@@ -153,4 +154,34 @@ TEST_CASE("join order: a query written in a bad order is reordered, with the sam
     QueryResult reordered = db.execute(sql);
     db.set_optimizer_enabled(false);
     REQUIRE(reordered.stats.rows_processed < db.execute(sql).stats.rows_processed);
+}
+
+TEST_CASE("join order: hash_joinable agrees with split_join_condition") {
+    Database db = tables_of({4, 4, 4, 4}, {2, 2, 2, 2});
+    for (const char* sql : {
+             "SELECT * FROM t0, t1, t2, t3 WHERE t0.k = t1.k AND t1.id = t2.id AND t2.k = t3.k AND t3.id = t0.id",
+             "SELECT * FROM t0, t1, t2, t3 WHERE t0.id + t1.id = t2.k AND t3.k = 1 + t2.id AND t0.k = t0.id",
+             "SELECT * FROM t0, t1, t2, t3 WHERE t0.k = t1.k AND t2.k < t3.k AND t1.id = t3.id + t2.id",
+         }) {
+        INFO(sql);
+        BoundSelect bound = bind_select(std::get<Select>(parse_statement(sql).node), db.catalog());
+        JoinGraph graph = *extract_join_graph(input_of(*plan_select(bound)));
+        const std::uint32_t all = (1u << graph.relations.size()) - 1;
+        for (std::uint32_t group = 1; group < all; ++group) {
+            std::vector<std::size_t> order;
+            for (std::size_t t = 0; t < graph.relations.size(); ++t)
+                if (group >> t & 1) order.push_back(t);
+            PlanPtr left = relation_with_filters(graph, order[0]);
+            for (std::size_t i = 1; i < order.size(); ++i)
+                left = join_onto(graph, left, group & ((1u << order[i]) - 1), order[i], relation_with_filters(graph, order[i]));
+            for (std::size_t t = 0; t < graph.relations.size(); ++t) {
+                if (group >> t & 1) continue;
+                PlanPtr joined = join_onto(graph, left, group, t, relation_with_filters(graph, t));
+                const auto& join = std::get<LogicalJoin>(joined->node);
+                bool split = !split_join_condition(join.condition, output_columns(*join.left), output_columns(*join.right)).keys.empty();
+                INFO("group " << group << " + table " << t);
+                REQUIRE(hash_joinable(graph, group, t) == split);
+            }
+        }
+    }
 }

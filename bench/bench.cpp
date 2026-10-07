@@ -2,6 +2,7 @@
 // cardinal_bench e5 [--rows 30000] [--seed 1]
 // cardinal_bench calibrate [--runs 7] [--seed 1]
 // cardinal_bench e4 [--runs 3] [--seed 1]
+// cardinal_bench plan [--runs 20]
 //
 // E4: when does a hash join beat a nested loop join? The inner (right) table grows from 1 to
 // 1,000,000 rows against a left table of 1, 10 or 1000 rows, and each size is run as a nested
@@ -21,12 +22,16 @@
 // kept by the filter, the demo query is run with every rule on and with just the
 // pushdown rule off. Prints CSV on stdout, with a comment header saying what built it.
 //
+// plan: how long the join order search takes, for 2 to 10 tables joined in a line and joined
+// every table to every other. Only the search is timed, with a fresh estimator each run.
+//
 // Rules for numbers you can trust (PLAN.md section 6): release build only, one warm-up
 // run, the median of several runs plus the fastest and slowest, a fixed seed, planning
 // timed apart from execution, and ANALYZE before timing. est_cost stays empty until the
 // cost model exists (M6).
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -36,7 +41,12 @@
 #include <string>
 #include <vector>
 
+#include "binder/binder.h"
+#include "cost/join_order.h"
 #include "engine/datagen.h"
+#include "logical/plan_util.h"
+#include "logical/planner.h"
+#include "sql/parser.h"
 
 namespace {
 
@@ -392,16 +402,73 @@ int run_e1(const Options& opt) {
     return 0;
 }
 
+int run_plan(const Options& opt) {
+    std::printf("# experiment: plan, how long the join order search takes\n");
+    std::printf("# data: tables t0..t9 (id INT, k INT), 100 rows each, k has 10 values, analyzed\n");
+    std::printf("# shapes: line (t0.k = t1.k, t1.k = t2.k, ...) and clique (every pair joined on k)\n");
+    std::printf("# runs: 1 warm-up, then %d timed; plan_ms is the median, with the fastest and slowest\n", opt.runs);
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::printf("# cpu: %s\n", cpu_model().c_str());
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+#ifndef NDEBUG
+    std::printf("# WARNING: not a release build, so these timings mean little\n");
+#endif
+    std::printf("experiment,shape,tables,joins_priced,plan_ms,plan_ms_min,plan_ms_max,commit\n");
+
+    Database db;
+    for (std::size_t t = 0; t < cardinal::kMaxSearchedRelations; ++t) {
+        std::string name = "t" + std::to_string(t);
+        db.execute("CREATE TABLE " + name + " (id INT, k INT)");
+        std::vector<cardinal::Row> rows;
+        for (int n = 0; n < 100; ++n) rows.push_back({cardinal::Value(std::int64_t{n}), cardinal::Value(std::int64_t{n % 10})});
+        db.table(name)->insert_rows(std::move(rows));
+        db.execute("ANALYZE " + name);
+    }
+
+    for (const char* shape : {"line", "clique"}) {
+        for (std::size_t n = 2; n <= cardinal::kMaxSearchedRelations; ++n) {
+            std::string sql = "SELECT * FROM t0", where;
+            for (std::size_t t = 1; t < n; ++t) sql += ", t" + std::to_string(t);
+            for (std::size_t a = 0; a < n; ++a)
+                for (std::size_t b = a + 1; b < n; ++b) {
+                    if (std::string(shape) == "line" && b != a + 1) continue;
+                    where += (where.empty() ? " WHERE " : " AND ") + ("t" + std::to_string(a)) + ".k = t" + std::to_string(b) + ".k";
+                }
+            cardinal::BoundSelect bound = cardinal::bind_select(std::get<cardinal::Select>(cardinal::parse_statement(sql + where).node), db.catalog());
+            cardinal::JoinGraph graph = *cardinal::extract_join_graph(cardinal::input_of(*cardinal::plan_select(bound)));
+            cardinal::DefaultCostModel model;
+
+            std::vector<double> times;
+            std::size_t priced = 0;
+            for (int run = 0; run <= opt.runs; ++run) {
+                auto started = std::chrono::steady_clock::now();
+                cardinal::CardinalityEstimator estimator(bound.scope, db.catalog());
+                priced = cardinal::choose_join_order(graph, estimator, model)->joins_priced;
+                double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+                if (run > 0) times.push_back(ms);
+            }
+            std::printf("plan,%s,%zu,%zu,%.3f,%.3f,%.3f,%s\n", shape, n, priced, median(times),
+                        *std::min_element(times.begin(), times.end()), *std::max_element(times.begin(), times.end()), commit.c_str());
+            std::fflush(stdout);
+        }
+    }
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     std::string experiment = argc > 1 ? argv[1] : "";
-    if (experiment != "e1" && experiment != "e4" && experiment != "e5" && experiment != "calibrate") {
+    if (experiment != "e1" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
+        experiment != "plan") {
         std::fprintf(stderr,
                      "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
                      "       cardinal_bench e5 [--rows 30000] [--seed 1]\n"
                      "       cardinal_bench calibrate [--runs 7] [--seed 1]\n"
-                     "       cardinal_bench e4 [--runs 3] [--seed 1]\n");
+                     "       cardinal_bench e4 [--runs 3] [--seed 1]\n"
+                     "       cardinal_bench plan [--runs 20]\n");
         return 2;
     }
     Options opt;
@@ -419,5 +486,6 @@ int main(int argc, char** argv) {
     }
     if (experiment == "calibrate") return run_calibrate(opt);
     if (experiment == "e4") return run_e4(opt);
+    if (experiment == "plan") return run_plan(opt);
     return experiment == "e5" ? run_e5(opt) : run_e1(opt);
 }
