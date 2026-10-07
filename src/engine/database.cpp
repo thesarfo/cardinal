@@ -8,6 +8,7 @@
 #include "common/error.h"
 #include "engine/explain.h"
 #include "cost/cost_planner.h"
+#include "cost/join_order.h"
 #include "exec/build.h"
 #include "logical/plan_util.h"
 #include "expr/evaluator.h"
@@ -85,6 +86,36 @@ std::string describe_forced(const PlannerOptions& options) {
     return std::string("hash joins, building from the ") + (options.build_left ? "left" : "right") + " input";
 }
 
+struct Optimized {
+    PlanPtr original;
+    OptimizeResult result;
+};
+
+// The rules, then the join order, which is skipped when a join method is forced. Ordering
+// drops the prunes between joins, so the rules run again to put them back.
+Optimized optimize_select(const Catalog& catalog, const BoundSelect& bound, const RuleOptimizer& optimizer, bool optimize,
+                          const std::optional<PlannerOptions>& forced, const CostModel& model) {
+    PlanPtr original = plan_select(bound);
+    if (!optimize) return {original, OptimizeResult{original, {}, false}};
+    OptimizeResult result = optimizer.optimize(original);
+    if (forced) return {original, std::move(result)};
+
+    CardinalityEstimator estimator(bound.scope, catalog);
+    PlanPtr ordered = order_joins(result.plan, estimator, model);
+    if (plan_equal(ordered, result.plan)) return {original, std::move(result)};
+    int pass = result.trace.empty() ? 1 : result.trace.back().pass + 1;
+    result.trace.push_back({"join-order", pass, result.plan, ordered});
+
+    OptimizeResult again = optimizer.optimize(ordered);
+    for (RuleFiring& firing : again.trace) {
+        firing.pass += pass;
+        result.trace.push_back(std::move(firing));
+    }
+    result.plan = again.plan;
+    result.hit_pass_limit = again.hit_pass_limit;
+    return {original, std::move(result)};
+}
+
 // Chooses how to run each step: the forced options if there are any, otherwise by cost, and
 // keeps what the planner looked at.
 VerboseInfo choose_physical(const Catalog& catalog, const BoundSelect& bound, const PlanPtr& logical,
@@ -107,8 +138,7 @@ QueryResult select(const Catalog& catalog, const RuleOptimizer& optimizer, bool 
                    const std::optional<PlannerOptions>& forced, const CostModel& model, const Select& stmt) {
     auto planning_started = std::chrono::steady_clock::now();
     BoundSelect bound = bind_select(stmt, catalog);
-    PlanPtr logical = plan_select(bound);
-    if (optimize) logical = optimizer.optimize(logical).plan;
+    PlanPtr logical = optimize_select(catalog, bound, optimizer, optimize, forced, model).result.plan;
     PhysicalPtr plan = choose_physical(catalog, bound, logical, forced, model).physical;
     std::unique_ptr<Operator> root = build_operator(*plan, catalog);
 
@@ -162,16 +192,6 @@ void Database::rebuild_optimizer() {
 
 namespace {
 
-struct Optimized {
-    PlanPtr original;
-    OptimizeResult result;
-};
-
-Optimized optimize_for_explain(const PlanPtr& original, const RuleOptimizer& optimizer, bool optimize) {
-    if (!optimize) return {original, OptimizeResult{original, {}, false}};
-    return {original, optimizer.optimize(original)};
-}
-
 // The steps of the logical plan and the operators built from it have the same shape, so
 // they can be walked together. A step's own time is what is left after taking off its inputs'.
 void collect_actuals(const LogicalPlan& step, const Operator& op, StepActuals& out) {
@@ -190,7 +210,7 @@ ExplainAnalyzeOutput explain_analyze_select(const Catalog& catalog, const RuleOp
                                             bool verbose, const Select& stmt) {
     auto planning_started = std::chrono::steady_clock::now();
     BoundSelect bound = bind_select(stmt, catalog);
-    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer, optimize);
+    Optimized optimized = optimize_select(catalog, bound, optimizer, optimize, forced, model);
     VerboseInfo chosen = choose_physical(catalog, bound, optimized.result.plan, forced, model);
     std::unique_ptr<Operator> root = build_operator(*chosen.physical, catalog);
     AnalyzeSummary summary;
@@ -213,7 +233,7 @@ CostBasedPlan Database::cost_of(std::string_view sql) {
     const auto* select_stmt = std::get_if<Select>(&statement.node);
     if (!select_stmt) throw DbError("only a SELECT has a cost");
     BoundSelect bound = bind_select(*select_stmt, catalog_);
-    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);
+    Optimized optimized = optimize_select(catalog_, bound, optimizer_, optimize_, forced_planner_, *cost_model_);
     CardinalityEstimator estimator(bound.scope, catalog_);
     CostBasedPlan planned = plan_by_cost(optimized.result.plan, estimator, *cost_model_);
     for (StepOptions& step : planned.trace) step.step = nullptr;
@@ -240,7 +260,7 @@ QueryResult Database::execute(const Statement& statement) {
         return {{}, {}, explain_analyze_select(catalog_, optimizer_, optimize_, forced_planner_, *cost_model_, explain.verbose, *select_stmt).text, {}};
 
     BoundSelect bound = bind_select(*select_stmt, catalog_);
-    Optimized optimized = optimize_for_explain(plan_select(bound), optimizer_, optimize_);
+    Optimized optimized = optimize_select(catalog_, bound, optimizer_, optimize_, forced_planner_, *cost_model_);
     if (!explain.verbose) return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_), {}};
     VerboseInfo chosen = choose_physical(catalog_, bound, optimized.result.plan, forced_planner_, *cost_model_);
     return {{}, {}, format_explain(optimized.original, optimized.result, bound.scope, catalog_, &chosen), {}};

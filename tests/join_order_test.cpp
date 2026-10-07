@@ -8,6 +8,7 @@
 #include <random>
 
 #include "cost/cost_planner.h"
+#include "engine/answer_checker.h"
 #include "engine/database.h"
 #include "logical/plan_util.h"
 #include "logical/planner.h"
@@ -18,8 +19,7 @@ using Catch::Approx;
 
 namespace {
 
-// Tables t0, t1, ... each (id INT, k INT), with the given numbers of rows, analyzed. Column
-// k takes `distinct` values, so joins on k grow or shrink depending on the sizes.
+// Tables t0, t1, ... each (id INT, k INT), analyzed. Column k takes `distinct` values.
 Database tables_of(const std::vector<int>& sizes, const std::vector<int>& distinct) {
     Database db;
     for (std::size_t t = 0; t < sizes.size(); ++t) {
@@ -36,11 +36,10 @@ Database tables_of(const std::vector<int>& sizes, const std::vector<int>& distin
 struct Searched {
     JoinGraph graph;
     std::optional<JoinOrder> chosen;
-    Cost brute_force;  // the cheapest order, trying every one
+    Cost brute_force;
 };
 
-// Runs the search on the joins of `sql`, and also prices every order the search is allowed
-// to pick: every permutation with no cross join that could have waited.
+// Brute force tries every order the search could pick: no cross join that could have waited.
 Searched search(Database& db, const std::string& sql) {
     BoundSelect bound = bind_select(std::get<Select>(parse_statement(sql).node), db.catalog());
     PlanPtr plan = plan_select(bound);
@@ -72,17 +71,13 @@ Searched search(Database& db, const std::string& sql) {
 }  // namespace
 
 TEST_CASE("join order: three tables in a line, by hand") {
-    // t0 is tiny, t1 and t2 are big. t0 - t1 - t2: t0 and t2 share nothing.
     Database db = tables_of({10, 5000, 5000}, {10, 1000, 1000});
     Searched s = search(db, "SELECT * FROM t2 JOIN t1 ON t2.k = t1.k JOIN t0 ON t1.k = t0.k");
     REQUIRE(s.chosen);
 
-    // Written as t2, t1, t0, which are tables 0, 1 and 2 of the graph. Pairs priced: t2 + t1,
-    // t1 + t2, t1 + t0, t0 + t1, then the third table onto each of the two connected pairs.
-    // t2 + t0 is never tried, because t1 joins to either of them.
+    // Four pairs, then one table onto each connected pair. t2 + t0 is never tried.
     REQUIRE(s.chosen->joins_priced == 6);
 
-    // Joining the tiny table first keeps the middle result small, so t2 comes last.
     REQUIRE(s.chosen->order.back() == 0);
     REQUIRE(s.chosen->cost.total == Approx(s.brute_force.total));
 }
@@ -100,7 +95,6 @@ TEST_CASE("join order: two groups with nothing between them are joined by a cros
     REQUIRE(s.chosen);
     REQUIRE(s.chosen->cost.total == Approx(s.brute_force.total));
 
-    // t0 and t1 are joined before t2 comes in, whichever side t2 lands on.
     const std::vector<std::size_t>& order = s.chosen->order;
     REQUIRE((order.front() == 2 || order.back() == 2));
 }
@@ -143,4 +137,20 @@ TEST_CASE("join order: too many tables, no search") {
     REQUIRE(graph);
     CardinalityEstimator estimator(bound.scope, db.catalog());
     REQUIRE_FALSE(choose_join_order(*graph, estimator, DefaultCostModel()));
+}
+
+TEST_CASE("join order: a query written in a bad order is reordered, with the same answer") {
+    Database db = tables_of({5, 300, 300}, {5, 60, 60});
+    const std::string sql = "SELECT t0.id, t2.id FROM t2 JOIN t1 ON t2.k = t1.k JOIN t0 ON t1.k = t0.k";
+    std::string explain = db.execute("EXPLAIN " + sql).message;
+    INFO(explain);
+    REQUIRE(explain.find("join-order") != std::string::npos);
+
+    CheckOutcome check = check_query(db, sql);
+    INFO(check.detail);
+    REQUIRE(check.ok);
+
+    QueryResult reordered = db.execute(sql);
+    db.set_optimizer_enabled(false);
+    REQUIRE(reordered.stats.rows_processed < db.execute(sql).stats.rows_processed);
 }

@@ -17,6 +17,7 @@ PlanPtr make(auto node) { return std::make_shared<const LogicalPlan>(LogicalPlan
 bool is_join_region(const PlanPtr& plan) {
     if (const auto* join = std::get_if<LogicalJoin>(&plan->node)) return join->type == JoinType::Inner || join->type == JoinType::Cross;
     if (const auto* filter = std::get_if<LogicalFilter>(&plan->node)) return is_join_region(filter->input);
+    if (const auto* prune = std::get_if<LogicalPrune>(&plan->node)) return is_join_region(prune->input);
     return false;
 }
 
@@ -36,6 +37,10 @@ void collect(const PlanPtr& plan, Collected& out) {
     if (const auto* filter = std::get_if<LogicalFilter>(&plan->node); filter && is_join_region(plan)) {
         collect(filter->input, out);
         for (BoundExprPtr& part : split_ands(filter->predicate)) out.parts.push_back(std::move(part));
+        return;
+    }
+    if (const auto* prune = std::get_if<LogicalPrune>(&plan->node); prune && is_join_region(plan)) {
+        collect(prune->input, out);  // only narrows the rows; column pruning can put it back
         return;
     }
     out.relations.push_back({plan, output_columns(*plan)});

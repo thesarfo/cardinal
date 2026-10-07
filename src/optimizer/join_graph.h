@@ -41,27 +41,21 @@ struct JoinGraph {
 
 constexpr std::size_t kMaxGraphRelations = 32;
 
-// Takes apart `plan` if it is a join, or filters on top of joins. Gives nothing for any
+// Takes apart `plan` if it is a join, or filters and prunes on top of joins. The prunes
+// between joins are dropped. Gives nothing for any
 // other plan, or for more than kMaxGraphRelations tables.
 std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan);
 
-// Table `table` with its own single-table filters right on top of it.
 PlanPtr relation_with_filters(const JoinGraph& graph, std::size_t table);
 
-// `left`, which holds the tables in `joined`, joined to `right`, which is table `table`.
-// The condition is every one that the new table makes checkable; with none it is a cross join.
+// The condition is every one that `table` makes checkable; with none it is a cross join.
 PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t joined, std::size_t table, PlanPtr right);
 
-// `tree` under a filter for the conditions that read no table, if there are any.
 PlanPtr with_constant_filters(const JoinGraph& graph, PlanPtr tree);
 
-// True if some condition joins `table` to the tables in `joined`: it reads both, and
-// nothing else.
 bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
 
-// True if adding `table` to `joined` would be a cross join that could have waited:
-// nothing joins `table` to the group, but something joins another table to it. A planner
-// skips these. Only a group with nothing left to join to it may take a cross join.
+// True if nothing joins `table` to the group but something joins another table to it.
 bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
 
 // The tables joined left-deep in `order` (a permutation of 0..n-1). Each condition

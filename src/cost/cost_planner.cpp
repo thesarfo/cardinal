@@ -17,12 +17,10 @@ struct Overloaded : Ts... {
 };
 
 struct JoinOptions {
-    std::vector<PlanOption> options;  // each costed alone, without its inputs
-    std::vector<JoinChoice> choices;  // the same order
+    std::vector<PlanOption> options;  // costed without their inputs
+    std::vector<JoinChoice> choices;
 };
 
-// The ways to run `join`: a nested loop join, and a hash join from either side when the
-// condition has an equality between the two inputs.
 JoinOptions join_options(const PlanPtr& node, const LogicalJoin& join, CardinalityEstimator& estimator, const CostModel& model) {
     double left = estimator.rows(join.left), right = estimator.rows(join.right), out = estimator.rows(node);
     JoinOptions joins;
