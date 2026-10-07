@@ -1,0 +1,27 @@
+# experiment: plan, how long the join order search takes
+# data: tables t0..t9 (id INT, k INT), 100 rows each, k has 10 values, analyzed
+# shapes: line (t0.k = t1.k, t1.k = t2.k, ...) and clique (every pair joined on k)
+# runs: 1 warm-up, then 100 timed; plan_ms is the median, with the fastest and slowest
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# cpu: Intel(R) Core(TM) i7-14700HX
+# commit: fd79acb
+experiment,shape,tables,joins_priced,plan_ms,plan_ms_min,plan_ms_max,commit
+plan,line,2,2,0.004,0.004,0.007,fd79acb
+plan,line,3,6,0.009,0.009,0.011,fd79acb
+plan,line,4,12,0.017,0.017,0.023,fd79acb
+plan,line,5,20,0.029,0.028,0.035,fd79acb
+plan,line,6,30,0.043,0.040,0.059,fd79acb
+plan,line,7,42,0.061,0.057,0.101,fd79acb
+plan,line,8,56,0.092,0.087,0.111,fd79acb
+plan,line,9,72,0.130,0.119,0.152,fd79acb
+plan,line,10,90,0.177,0.163,0.202,fd79acb
+plan,clique,2,2,0.004,0.004,0.006,fd79acb
+plan,clique,3,9,0.014,0.013,0.020,fd79acb
+plan,clique,4,28,0.042,0.040,0.053,fd79acb
+plan,clique,5,75,0.116,0.108,0.139,fd79acb
+plan,clique,6,186,0.301,0.281,0.362,fd79acb
+plan,clique,7,441,0.700,0.629,0.784,fd79acb
+plan,clique,8,1016,1.543,1.452,1.721,fd79acb
+plan,clique,9,2295,4.109,3.653,4.744,fd79acb
+plan,clique,10,5110,11.052,8.909,19.353,fd79acb
