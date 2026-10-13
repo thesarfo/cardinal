@@ -73,7 +73,9 @@ public:
 
     QuerySpec query() {
         QuerySpec q;
-        int tables = chance(35) ? 1 : 1 + pick(3);
+        // Mostly one to three tables; one query in five joins four to six, to give the join order
+        // search more than a few orders to choose from.
+        int tables = chance(35) ? 1 : chance(20) ? 4 + pick(3) : 1 + pick(3);
         q.from_table = table_name();
         q.from_alias = "q1";
         aliases_.push_back("q1");

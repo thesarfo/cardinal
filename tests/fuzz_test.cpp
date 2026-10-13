@@ -57,7 +57,7 @@ TEST_CASE("generator: a spread of queries, not one shape") {
         if (q.where && q.where->kind == BoolExpr::Kind::And) seen.insert("and");
         if (q.where && q.where->kind == BoolExpr::Kind::Not) seen.insert("not");
     }
-    REQUIRE(max_tables == 3);
+    REQUIRE(max_tables == 6);
     REQUIRE(seen == std::set<std::string>{"join-on", "comma-join", "where", "order-by", "limit", "star", "or", "and", "not"});
 }
 

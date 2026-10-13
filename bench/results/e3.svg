@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" width="760" height="400" font-family="Inter, system-ui, sans-serif">
+<text x="20" y="28" fill="#8a8a8a" font-size="13" text-anchor="start" font-weight="600">Time to run each of the 24 left-deep orders of a four-table join (log scale)</text>
+<text x="20" y="46" fill="#8a8a8a" font-size="11" text-anchor="start" font-weight="400">Bars are sorted by time. Orange: the order the search chose. Red: the query as written.</text>
+<line x1="80" y1="330.0" x2="740" y2="330.0" stroke="#8a8a8a" stroke-width="0.5"/>
+<text x="72" y="334.0" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">0.1 ms</text>
+<line x1="80" y1="262.5" x2="740" y2="262.5" stroke="#8a8a8a" stroke-width="0.5"/>
+<text x="72" y="266.5" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">1 ms</text>
+<line x1="80" y1="195.0" x2="740" y2="195.0" stroke="#8a8a8a" stroke-width="0.5"/>
+<text x="72" y="199.0" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">10 ms</text>
+<line x1="80" y1="127.5" x2="740" y2="127.5" stroke="#8a8a8a" stroke-width="0.5"/>
+<text x="72" y="131.5" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">100 ms</text>
+<line x1="80" y1="60.0" x2="740" y2="60.0" stroke="#8a8a8a" stroke-width="0.5"/>
+<text x="72" y="64.0" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">1000 ms</text>
+<rect x="84.1" y="290.4" width="19.2" height="39.6" fill="#4a7fb5"/>
+<rect x="111.6" y="290.2" width="19.2" height="39.8" fill="#4a7fb5"/>
+<rect x="139.1" y="290.2" width="19.2" height="39.8" fill="#4a7fb5"/>
+<rect x="166.6" y="289.7" width="19.2" height="40.3" fill="#4a7fb5"/>
+<rect x="194.1" y="288.5" width="19.2" height="41.5" fill="#4a7fb5"/>
+<rect x="221.6" y="287.4" width="19.2" height="42.6" fill="#4a7fb5"/>
+<rect x="249.1" y="281.9" width="19.2" height="48.1" fill="#4a7fb5"/>
+<rect x="276.6" y="277.8" width="19.2" height="52.2" fill="#4a7fb5"/>
+<rect x="304.1" y="263.5" width="19.2" height="66.5" fill="#4a7fb5"/>
+<rect x="331.6" y="263.5" width="19.2" height="66.5" fill="#4a7fb5"/>
+<rect x="359.1" y="258.8" width="19.2" height="71.2" fill="#4a7fb5"/>
+<rect x="386.6" y="256.8" width="19.2" height="73.2" fill="#4a7fb5"/>
+<rect x="414.1" y="253.5" width="19.2" height="76.5" fill="#4a7fb5"/>
+<rect x="441.6" y="253.2" width="19.2" height="76.8" fill="#4a7fb5"/>
+<rect x="469.1" y="247.4" width="19.2" height="82.6" fill="#4a7fb5"/>
+<rect x="496.6" y="247.4" width="19.2" height="82.6" fill="#4a7fb5"/>
+<rect x="524.1" y="246.4" width="19.2" height="83.6" fill="#4a7fb5"/>
+<rect x="551.6" y="245.6" width="19.2" height="84.4" fill="#4a7fb5"/>
+<rect x="579.1" y="225.0" width="19.2" height="105.0" fill="#c9743a"/>
+<rect x="606.6" y="222.6" width="19.2" height="107.4" fill="#4a7fb5"/>
+<rect x="634.1" y="123.0" width="19.2" height="207.0" fill="#c0504d"/>
+<rect x="661.6" y="122.2" width="19.2" height="207.8" fill="#4a7fb5"/>
+<rect x="689.1" y="120.7" width="19.2" height="209.3" fill="#4a7fb5"/>
+<rect x="716.6" y="117.2" width="19.2" height="212.8" fill="#4a7fb5"/>
+<text x="80" y="352" fill="#8a8a8a" font-size="11" text-anchor="start" font-weight="400">best 0.39 ms</text>
+<text x="740" y="352" fill="#8a8a8a" font-size="11" text-anchor="end" font-weight="400">worst 142 ms</text>
+<text x="380.0" y="352" fill="#8a8a8a" font-size="11" text-anchor="middle" font-weight="400">chosen 1.8 ms, written 117 ms</text>
+</svg>

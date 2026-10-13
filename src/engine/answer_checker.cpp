@@ -91,10 +91,13 @@ Observation observe(Database& db, const Statement& rows_stmt, const Statement& k
 // Puts the database's settings back when the check is over, however it ends.
 class RestoreSettings {
 public:
-    explicit RestoreSettings(Database& db) : db_(db), enabled_(db.optimizer_enabled()), planner_(db.forced_planner()) {}
+    explicit RestoreSettings(Database& db)
+        : db_(db), enabled_(db.optimizer_enabled()), planner_(db.forced_planner()), bushy_(db.bushy_joins()), ordering_(db.join_ordering()) {}
     ~RestoreSettings() {
         db_.set_disabled_rules({});
         db_.set_optimizer_enabled(enabled_);
+        db_.set_bushy_joins(bushy_);
+        db_.set_join_ordering(ordering_);
         if (planner_) db_.set_planner_options(*planner_);
         else db_.use_cost_based_planner();
     }
@@ -103,6 +106,8 @@ private:
     Database& db_;
     bool enabled_;
     std::optional<PlannerOptions> planner_;
+    bool bushy_;
+    bool ordering_;
 };
 
 }  // namespace
@@ -174,6 +179,16 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
     // Joins forced to the nested loop, with the rules on.
     Observation looped = run(true, {}, PlannerOptions{JoinMethod::NestedLoop});
     if (!(looped == reference)) wrong.push_back({"nested loop joins, optimizer on", looped});
+
+    // Joins ordered bushy, and joins left in the order they were written, with the rules on.
+    db.set_bushy_joins(true);
+    Observation bushy = run(true, {});
+    db.set_bushy_joins(false);
+    if (!(bushy == reference)) wrong.push_back({"bushy join order", bushy});
+    db.set_join_ordering(false);
+    Observation as_written = run(true, {});
+    db.set_join_ordering(true);
+    if (!(as_written == reference)) wrong.push_back({"joins in the order written, optimizer on", as_written});
 
     if (wrong.empty()) return {};
 
