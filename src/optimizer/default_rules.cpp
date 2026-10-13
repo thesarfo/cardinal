@@ -6,6 +6,7 @@
 #include "optimizer/cross_to_inner.h"
 #include "optimizer/filter_cleanup.h"
 #include "optimizer/filter_pushdown.h"
+#include "optimizer/having_pushdown.h"
 
 namespace cardinal {
 
@@ -17,6 +18,7 @@ std::vector<std::vector<std::unique_ptr<Rule>>> default_stages() {
     rules.push_back(std::make_unique<MergeFilters>());
     rules.push_back(std::make_unique<EmptyFalseFilter>());
     rules.push_back(std::make_unique<FilterPushdown>());
+    rules.push_back(std::make_unique<HavingPushdown>());
     rules.push_back(std::make_unique<CrossToInnerJoin>());
 
     std::vector<std::unique_ptr<Rule>> pruning;

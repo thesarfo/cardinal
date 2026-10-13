@@ -13,6 +13,17 @@ struct Overloaded : Ts... {
 
 std::string position(ColumnId id) { return "#" + std::to_string(id.value); }
 
+std::string aggregate_text(const std::vector<BoundExprPtr>& keys, const std::vector<PhysicalAggregateCall>& calls) {
+    std::string by, totals;
+    for (const BoundExprPtr& key : keys) by += (by.empty() ? "" : ", ") + format(*key, position);
+    for (const PhysicalAggregateCall& call : calls) {
+        std::string text = call.func == AggFunc::CountStar ? "count(*)"
+                                                           : std::string(agg_name(call.func)) + "(" + format(*call.arg, position) + ")";
+        totals += (totals.empty() ? "" : ", ") + text;
+    }
+    return (by.empty() ? std::string("one group") : "by " + by) + "; " + totals;
+}
+
 void write(const PhysicalPlan& plan, int depth, std::string& out) {
     std::vector<const PhysicalPlan*> children;
     std::string line = std::visit(
@@ -56,14 +67,11 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
             },
             [&](const PhysicalHashAggregate& n) {
                 children = {n.input.get()};
-                std::string keys, totals;
-                for (const BoundExprPtr& key : n.keys) keys += (keys.empty() ? "" : ", ") + format(*key, position);
-                for (const PhysicalAggregateCall& call : n.aggregates) {
-                    std::string text = call.func == AggFunc::CountStar ? "count(*)"
-                                                                       : std::string(agg_name(call.func)) + "(" + format(*call.arg, position) + ")";
-                    totals += (totals.empty() ? "" : ", ") + text;
-                }
-                return "HashAggregate[" + (keys.empty() ? std::string("one group") : "by " + keys) + "; " + totals + "]";
+                return "HashAggregate[" + aggregate_text(n.keys, n.aggregates) + "]";
+            },
+            [&](const PhysicalSortAggregate& n) {
+                children = {n.input.get()};
+                return "SortAggregate[" + aggregate_text(n.keys, n.aggregates) + "]";
             },
             [&](const PhysicalLimit& n) {
                 children = {n.input.get()};

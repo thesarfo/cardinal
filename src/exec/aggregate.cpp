@@ -1,6 +1,8 @@
 #include "exec/aggregate.h"
 
+#include <algorithm>
 #include <functional>
+#include <numeric>
 
 #include "common/error.h"
 #include "expr/evaluator.h"
@@ -140,6 +142,76 @@ std::optional<Row> HashAggregate::produce() {
             Row out = std::move(group.key);
             for (std::size_t i = 0; i < calls_.size(); ++i) out.push_back(group.states[i].result(calls_[i].func, calls_[i].arg));
             output_.push_back(std::move(out));
+        }
+    }
+    if (next_ >= output_.size()) return std::nullopt;
+    return std::move(output_[next_++]);
+}
+
+namespace {
+
+// NULL before everything else, the way Sort orders them. -1, 0 or 1.
+int compare_nullable(const Value& a, const Value& b) {
+    if (a.is_null() || b.is_null()) return static_cast<int>(!a.is_null()) - static_cast<int>(!b.is_null());
+    return compare_values(a, b);
+}
+
+}  // namespace
+
+SortAggregate::SortAggregate(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> keys,
+                             std::vector<PhysicalAggregateCall> calls)
+    : input_(std::move(input)), keys_(std::move(keys)), calls_(std::move(calls)) {}
+
+std::optional<Row> SortAggregate::produce() {
+    if (!loaded_) {
+        loaded_ = true;
+        std::vector<Row> rows;
+        std::vector<std::vector<Value>> key_values;
+        while (std::optional<Row> row = input_->next()) {
+            count_scanned();
+            std::vector<Value> key;
+            key.reserve(keys_.size());
+            for (const BoundExprPtr& k : keys_) key.push_back(evaluate(*k, *row));
+            key_values.push_back(std::move(key));
+            rows.push_back(std::move(*row));
+        }
+
+        std::vector<std::size_t> order(rows.size());
+        std::iota(order.begin(), order.end(), 0);
+        auto compare_keys = [&](const std::vector<Value>& a, const std::vector<Value>& b) {
+            for (std::size_t k = 0; k < a.size(); ++k)
+                if (int c = compare_nullable(a[k], b[k]); c != 0) return c;
+            return 0;
+        };
+        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+            return compare_keys(key_values[a], key_values[b]) < 0;
+        });
+
+        auto finish = [&](std::vector<Value> key, const std::vector<AggregateState>& states) {
+            Row out = std::move(key);
+            for (std::size_t i = 0; i < calls_.size(); ++i) out.push_back(states[i].result(calls_[i].func, calls_[i].arg));
+            output_.push_back(std::move(out));
+        };
+
+        if (keys_.empty()) {
+            std::vector<AggregateState> states(calls_.size());
+            for (std::size_t r : order)
+                for (std::size_t i = 0; i < calls_.size(); ++i)
+                    states[i].add(calls_[i].func, calls_[i].arg ? evaluate(*calls_[i].arg, rows[r]) : Value());
+            finish({}, states);
+        } else {
+            std::vector<AggregateState> states;
+            const std::vector<Value>* current = nullptr;
+            for (std::size_t r : order) {
+                if (!current || compare_keys(*current, key_values[r]) != 0) {
+                    if (current) finish(*current, states);
+                    current = &key_values[r];
+                    states.assign(calls_.size(), AggregateState{});
+                }
+                for (std::size_t i = 0; i < calls_.size(); ++i)
+                    states[i].add(calls_[i].func, calls_[i].arg ? evaluate(*calls_[i].arg, rows[r]) : Value());
+            }
+            if (current) finish(*current, states);
         }
     }
     if (next_ >= output_.size()) return std::nullopt;

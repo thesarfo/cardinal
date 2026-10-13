@@ -172,6 +172,15 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
         }
     }
 
+    // Groups found by sorting, from either side of the rules.
+    for (bool optimize : {false, true}) {
+        PlannerOptions sorted{JoinMethod::NestedLoop};
+        sorted.aggregate_method = AggregateMethod::Sort;
+        Observation by_sort = run(optimize, {}, sorted);
+        if (!(by_sort == reference))
+            wrong.push_back({std::string("sort aggregates (optimizer ") + (optimize ? "on" : "off") + ")", by_sort});
+    }
+
     // Joins chosen by cost, with the rules off.
     Observation costed = run(false, {});
     if (!(costed == reference)) wrong.push_back({"joins chosen by cost, optimizer off", costed});

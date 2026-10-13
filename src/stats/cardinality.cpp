@@ -45,18 +45,19 @@ double CardinalityEstimator::compute(const LogicalPlan& plan) {
                 // One row per group. With no keys that is one row, even from an empty input.
                 if (n.keys.empty()) return 1.0;
                 double input = rows(n.input);
-                // Groups can't outnumber the distinct values multiplied together (each NULL
-                // makes one more), nor the rows. A key that isn't a plain column is a guess
-                // of "every row is its own group", which the cap on rows then trims.
+                // A key made from some columns can take no more values than those columns'
+                // distinct values multiplied together (a NULL counts as one more), so that is
+                // the guess: for a plain column its own distinct count, for age + 1 the same.
+                // Groups can't outnumber the rows either. A column with no statistics gives
+                // "every row is its own group", which the cap on rows then trims. Keys that
+                // are related make this too high, which is the independence assumption again.
                 double groups = 1;
                 for (const GroupKey& key : n.keys) {
-                    const auto* column = std::get_if<BoundColumn>(&key.expr->node);
-                    const ColumnFacts* facts = column ? stats_.find(column->id) : nullptr;
-                    if (!facts) {
-                        groups = input;
-                        break;
+                    for (ColumnId id : columns_used(*key.expr)) {
+                        const ColumnFacts* facts = stats_.find(id);
+                        if (!facts) return input;
+                        groups *= std::max<double>(1, static_cast<double>(facts->column->distinct) + (facts->column->null_fraction > 0 ? 1 : 0));
                     }
-                    groups *= std::max<double>(1, static_cast<double>(facts->column->distinct) + (facts->column->null_fraction > 0 ? 1 : 0));
                 }
                 return std::min(input, groups);
             },

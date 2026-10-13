@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+
 #include "common/error.h"
+#include "engine/datagen.h"
 #include "engine/database.h"
 #include "engine/result_format.h"
 #include "sql/ast_printer.h"
@@ -155,4 +158,78 @@ TEST_CASE("aggregate: the same answer with the optimizer off") {
     std::vector<Row> on = db.execute(sql).rows;
     db.set_optimizer_enabled(false);
     REQUIRE(db.execute(sql).rows == on);
+}
+
+TEST_CASE("aggregate: sorting and hashing find the same groups") {
+    Database db = orders_db();
+    const std::string sql = "SELECT user_id, COUNT(*), SUM(amount), MIN(id), MAX(id) FROM orders GROUP BY user_id";
+    auto sorted_rows = [](std::vector<Row> rows) {
+        std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+            return std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end(), [](const Value& x, const Value& y) {
+                if (x.is_null() || y.is_null()) return x.is_null() && !y.is_null();
+                return x.to_string() < y.to_string();
+            });
+        });
+        return rows;
+    };
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    std::vector<Row> hashed = db.execute(sql).rows;
+    PlannerOptions by_sort{JoinMethod::NestedLoop};
+    by_sort.aggregate_method = AggregateMethod::Sort;
+    db.set_planner_options(by_sort);
+    QueryResult sorted = db.execute(sql);
+    REQUIRE(sorted_rows(sorted.rows) == sorted_rows(hashed));
+    // In key order, with NULL first.
+    REQUIRE(sorted.rows.front()[0].is_null());
+    REQUIRE(sorted.rows.back()[0] == Value(std::int64_t{3}));
+}
+
+TEST_CASE("aggregate: a HAVING on a group key moves below the grouping, one on a total stays") {
+    Database db = orders_db();
+    std::string out = explain(db, "SELECT user_id, COUNT(*) FROM orders GROUP BY user_id HAVING user_id > 1 AND COUNT(*) > 0");
+    std::size_t final_plan = out.find("Final plan");
+    std::string tail = out.substr(final_plan);
+    std::size_t above = tail.find("Filter[count(*) > 0]");
+    std::size_t aggregate = tail.find("Aggregate[");
+    std::size_t below = tail.find("Filter[user_id > 1]");
+    REQUIRE(above != std::string::npos);
+    REQUIRE(below != std::string::npos);
+    REQUIRE(above < aggregate);
+    REQUIRE(aggregate < below);
+}
+
+TEST_CASE("aggregate: a constant HAVING with no group keys is not pushed down") {
+    Database db = orders_db();
+    // One group, always: HAVING false must give no rows, though a filter below would give one.
+    REQUIRE(db.execute("SELECT COUNT(*) FROM orders HAVING 1 = 0").rows.empty());
+    REQUIRE(db.execute("SELECT COUNT(*) FROM orders WHERE id > 100 HAVING COUNT(*) = 0").rows.size() == 1);
+}
+
+TEST_CASE("aggregate: columns nothing above reads are dropped before the join") {
+    Database db = orders_db();
+    std::string out = explain(db, "SELECT u.city, COUNT(*) FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.city");
+    std::string tail = out.substr(out.find("Final plan"));
+    REQUIRE(tail.find("Prune[") != std::string::npos);
+}
+
+TEST_CASE("aggregate: guessing the number of groups, and where it goes wrong") {
+    Database db;
+    generate_places(db, {.rows = 20000, .related = true});
+    db.execute("ANALYZE people");
+    auto guess = [&](const char* sql) {
+        ExplainAnalyzeOutput out = db.explain_analyze(sql);
+        return std::pair{out.root_estimate, out.root_actual};
+    };
+    using Guess = std::pair<double, std::int64_t>;
+    // One column: its distinct count, and that is exact.
+    REQUIRE(guess("SELECT city, COUNT(*) FROM people GROUP BY city") == Guess{30, 30});
+    // A key built from one column has no more values than the column.
+    REQUIRE(guess("SELECT age + 1, COUNT(*) FROM people GROUP BY age + 1") == Guess{60, 60});
+    // Two columns that do not depend on each other: the product is right.
+    REQUIRE(guess("SELECT country, age, COUNT(*) FROM people GROUP BY country, age") == Guess{600, 600});
+    // No keys: one group.
+    REQUIRE(guess("SELECT COUNT(*) FROM people") == Guess{1, 1});
+    // Two columns where one decides the other: the product is 10 times too high. The
+    // independence assumption again, this time for groups. Pinned so it does not improve by accident.
+    REQUIRE(guess("SELECT city, country, COUNT(*) FROM people GROUP BY city, country") == Guess{300, 30});
 }

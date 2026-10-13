@@ -92,6 +92,15 @@ PlanPtr descend(const PlanPtr& node, const ColumnSet& required) {
         PlanPtr input = descend(sort->input, needed);
         return input == sort->input ? node : make(LogicalSort{input, sort->keys});
     }
+    if (const auto* aggregate = std::get_if<LogicalAggregate>(&node->node)) {
+        // Only what the keys and the totals read has to come up from below.
+        ColumnSet needed;
+        for (const GroupKey& key : aggregate->keys) add_columns(needed, *key.expr);
+        for (const AggregateItem& item : aggregate->aggregates)
+            if (item.arg) add_columns(needed, *item.arg);
+        PlanPtr input = descend(aggregate->input, needed);
+        return input == aggregate->input ? node : make(LogicalAggregate{input, aggregate->keys, aggregate->aggregates});
+    }
     if (std::holds_alternative<LogicalJoin>(node->node)) return prune_join(node, required);
     return node;
 }

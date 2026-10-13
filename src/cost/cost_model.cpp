@@ -50,4 +50,12 @@ Cost DefaultCostModel::hash_aggregate(double input_rows, double groups) const {
             rows_or_zero(groups) * params_.per_row_cost};
 }
 
+Cost DefaultCostModel::sort_aggregate(double input_rows, double groups) const {
+    // The sort, then one comparison of each row with its neighbour; each group is built and
+    // passed on. There is no table to build, so a row costs a check where hashing costs a
+    // check and a row. Sorting still costs more than that saves, until the input is already
+    // in order (task 10.x), so for now hashing wins from two rows up.
+    return sort(input_rows) + Cost{rows_or_zero(input_rows) * params_.per_check_cost + rows_or_zero(groups) * params_.per_row_cost};
+}
+
 }  // namespace cardinal

@@ -44,6 +44,30 @@ private:
     bool loaded_ = false;
 };
 
+// The same totals with a different way of finding the groups: sort the input by the keys, then
+// total one run of equal keys at a time. Same answers as HashAggregate except for the order,
+// which here is the keys' order (NULL first), the way Sort puts them. `rows_scanned` counts the
+// input rows.
+class SortAggregate : public Operator {
+public:
+    const char* name() const override { return "SortAggregate"; }
+    SortAggregate(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> keys, std::vector<PhysicalAggregateCall> calls);
+
+    std::vector<const Operator*> children() const override { return {input_.get()}; }
+
+protected:
+    std::optional<Row> produce() override;
+
+private:
+    std::unique_ptr<Operator> input_;
+    std::vector<BoundExprPtr> keys_;
+    std::vector<PhysicalAggregateCall> calls_;
+
+    std::vector<Row> output_;
+    std::size_t next_ = 0;
+    bool loaded_ = false;
+};
+
 // The running total of one aggregate over one group. Shared with the sort-based version.
 struct AggregateState {
     std::int64_t count = 0;  // rows seen (CountStar) or non-NULL values seen

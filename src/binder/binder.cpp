@@ -2,6 +2,7 @@
 
 #include <cctype>
 
+#include "binder/format.h"
 #include "common/error.h"
 #include "sql/ast_printer.h"
 
@@ -235,7 +236,9 @@ private:
             bool same_arg = (!item.arg && !arg) || (item.arg && arg && expr_equal(*item.arg, *arg));
             if (item.func == *func && same_arg) return make(BoundColumn{item.output}, type);
         }
-        ColumnId output = aggregation_->scope.add_computed(call.star ? "count(*)" : "?column?", type.value_or(Type::Int));
+        // Named like the call, so a plan that shows the column reads naturally.
+        std::string name = call.star ? "count(*)" : std::string(agg_name(*func)) + "(" + format(*arg, scope_) + ")";
+        ColumnId output = aggregation_->scope.add_computed(std::move(name), type.value_or(Type::Int));
         aggregation_->items.push_back({*func, arg, output});
         return make(BoundColumn{output}, type);
     }

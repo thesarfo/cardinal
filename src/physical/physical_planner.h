@@ -24,6 +24,9 @@ struct JoinChoice {
     bool build_left = false;
 };
 
+// How to find the groups of an Aggregate: a lookup table, or sorting the input by the keys.
+enum class AggregateMethod { Hash, Sort };
+
 struct PlannerOptions {
     PlannerOptions() = default;
     PlannerOptions(JoinMethod method, bool build_left_input = false) : join_method(method), build_left(build_left_input) {}
@@ -33,6 +36,10 @@ struct PlannerOptions {
     // If set, asked about every join, and its answer is used instead of the two settings above.
     // This is how a planner that prices the options (cost/cost_planner.h) picks per join.
     std::function<JoinChoice(const LogicalJoin&)> choose_join;
+
+    AggregateMethod aggregate_method = AggregateMethod::Hash;
+    // Same idea for the aggregates: asked about every one, and used instead of the setting above.
+    std::function<AggregateMethod(const LogicalAggregate&)> choose_aggregate;
 };
 
 PhysicalPtr plan_physical(const LogicalPlan& plan, const PlannerOptions& options = {});

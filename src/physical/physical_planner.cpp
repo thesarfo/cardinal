@@ -124,6 +124,9 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                     calls.push_back({item.func, item.arg ? to_positions(item.arg, in.layout) : nullptr});
                     layout.push_back(item.output);
                 }
+                AggregateMethod method = options.choose_aggregate ? options.choose_aggregate(n) : options.aggregate_method;
+                if (method == AggregateMethod::Sort)
+                    return Planned{make(PhysicalSortAggregate{in.plan, std::move(keys), std::move(calls)}), layout};
                 return Planned{make(PhysicalHashAggregate{in.plan, std::move(keys), std::move(calls)}), layout};
             },
             [&](const LogicalSort& n) {

@@ -52,6 +52,8 @@ public:
     virtual Cost hash_join(double build_rows, double probe_rows, double output_rows) const = 0;
     // Hashes each input row's group key into a table of groups, and passes on one row per group.
     virtual Cost hash_aggregate(double input_rows, double groups) const = 0;
+    // Sorts the input by the group key, then passes over it once comparing neighbours.
+    virtual Cost sort_aggregate(double input_rows, double groups) const = 0;
 };
 
 // The formulas in docs/cost-model.md.
@@ -66,6 +68,7 @@ public:
     Cost nested_loop_join(double left_rows, double right_rows, double output_rows) const override;
     Cost hash_join(double build_rows, double probe_rows, double output_rows) const override;
     Cost hash_aggregate(double input_rows, double groups) const override;
+    Cost sort_aggregate(double input_rows, double groups) const override;
 
     const CostParams& params() const { return params_; }
 

@@ -134,7 +134,7 @@ TEST_CASE("rules can be switched off one at a time") {
     std::vector<std::string> names = db.rule_names();
     REQUIRE(names == std::vector<std::string>{"constant-folding", "boolean-cleanup", "remove-true-filter",
                                               "merge-filters", "empty-false-filter", "filter-pushdown",
-                                              "cross-to-inner-join", "column-pruning"});
+                                              "having-pushdown", "cross-to-inner-join", "column-pruning"});
 
     auto fired = [&](const char* sql) { return db.execute(std::string("EXPLAIN ") + sql).message; };
     REQUIRE(fired("SELECT name FROM users WHERE age > 20 + 5").find("constant-folding") != std::string::npos);

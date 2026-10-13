@@ -68,9 +68,17 @@ struct PhysicalHashAggregate {
     std::vector<PhysicalAggregateCall> aggregates;
 };
 
+// The same totals, found by sorting the input on the keys and taking each run of equal keys.
+// Groups come out in key order.
+struct PhysicalSortAggregate {
+    PhysicalPtr input;
+    std::vector<BoundExprPtr> keys;
+    std::vector<PhysicalAggregateCall> aggregates;
+};
+
 struct PhysicalPlan {
     std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin,
-                 PhysicalHashAggregate>
+                 PhysicalHashAggregate, PhysicalSortAggregate>
         node;
 };
 

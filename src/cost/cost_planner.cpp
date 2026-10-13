@@ -78,23 +78,34 @@ public:
                     record(node, {{"Limit", cost}});
                     return cost;
                 },
-                [&](const LogicalAggregate& n) {
-                    Cost cost = price(n.input) + model_.hash_aggregate(estimator_.rows(n.input), estimator_.rows(node));
-                    record(node, {{"HashAggregate", cost}});
-                    return cost;
-                },
+                [&](const LogicalAggregate& n) { return price_aggregate(node, n); },
                 [&](const LogicalJoin& n) { return price_join(node, n); },
             },
             node->node);
     }
 
     std::unordered_map<const LogicalJoin*, JoinChoice> choices;
+    std::unordered_map<const LogicalAggregate*, AggregateMethod> aggregate_choices;
     PlanTrace trace;
 
 private:
     void record(const PlanPtr& node, std::vector<PlanOption> options) {
         if (options.size() == 1) options[0].chosen = true;
         trace.push_back({node.get(), std::move(options)});
+    }
+
+    Cost price_aggregate(const PlanPtr& node, const LogicalAggregate& aggregate) {
+        Cost input = price(aggregate.input);
+        double in = estimator_.rows(aggregate.input), groups = estimator_.rows(node);
+        std::vector<PlanOption> options;
+        options.push_back({"HashAggregate", input + model_.hash_aggregate(in, groups)});
+        options.push_back({"SortAggregate", input + model_.sort_aggregate(in, groups)});
+        std::size_t best = options[1].cost < options[0].cost ? 1 : 0;
+        options[best].chosen = true;
+        aggregate_choices[&aggregate] = best == 0 ? AggregateMethod::Hash : AggregateMethod::Sort;
+        Cost cost = options[best].cost;
+        trace.push_back({node.get(), std::move(options)});
+        return cost;
     }
 
     Cost price_join(const PlanPtr& node, const LogicalJoin& join) {
@@ -135,6 +146,10 @@ CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimat
     options.choose_join = [&](const LogicalJoin& join) {
         auto it = pricer.choices.find(&join);
         return it == pricer.choices.end() ? JoinChoice{} : it->second;
+    };
+    options.choose_aggregate = [&](const LogicalAggregate& aggregate) {
+        auto it = pricer.aggregate_choices.find(&aggregate);
+        return it == pricer.aggregate_choices.end() ? AggregateMethod::Hash : it->second;
     };
     return {plan_physical(*logical, options), total, std::move(pricer.trace)};
 }
