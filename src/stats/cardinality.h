@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <vector>
 
 #include "binder/scope.h"
 #include "catalog/catalog.h"
@@ -41,6 +42,9 @@ private:
 
     const Catalog& catalog_;
     StatsLookup stats_;
+    // The cache is keyed by address. A plan that was freed and then had its address reused
+    // would hand back another plan's rows, so every plan cached through rows() is kept alive.
+    std::vector<PlanPtr> held_;
     std::unordered_map<const LogicalPlan*, double> cache_;
 };
 

@@ -17,6 +17,7 @@ double CardinalityEstimator::rows(const PlanPtr& plan) {
     if (auto it = cache_.find(plan.get()); it != cache_.end()) return it->second;
     double result = compute(*plan);
     cache_.emplace(plan.get(), result);
+    held_.push_back(plan);
     return result;
 }
 
