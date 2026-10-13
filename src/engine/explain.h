@@ -7,6 +7,7 @@
 #include "binder/scope.h"
 #include "catalog/catalog.h"
 #include "cost/cost_planner.h"
+#include "cost/join_order.h"
 #include "logical/plan.h"
 #include "optimizer/rule_optimizer.h"
 
@@ -18,6 +19,7 @@ struct VerboseInfo {
     PhysicalPtr physical;  // the plan that will run
     Cost cost;
     std::string forced;  // set if a join method was forced, saying which; no costs were compared
+    std::vector<JoinOrderReport> join_orders;
 };
 
 // What EXPLAIN prints: the plan as first written, the rules that fired in order, and the plan

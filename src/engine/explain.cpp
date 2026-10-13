@@ -107,6 +107,21 @@ std::string options_text(const PlanPtr& plan, const Scope& scope, CardinalityEst
     return out;
 }
 
+std::string join_orders_text(const std::vector<JoinOrderReport>& reports) {
+    std::string out;
+    for (const JoinOrderReport& r : reports) {
+        const char* used = r.used == JoinSearch::Bushy ? "bushy" : r.used == JoinSearch::Greedy ? "greedy" : "left-deep";
+        out += "  " + std::to_string(r.tables) + " tables, searched " + used + ", " + std::to_string(r.joins_priced) + " joins priced\n";
+        if (r.used == JoinSearch::Greedy) {
+            out += "    * greedy     cost " + cost_text(r.left_deep.total) + "  (too many tables to search every order)\n";
+            continue;
+        }
+        out += std::string("    ") + (r.used == JoinSearch::LeftDeep ? "* " : "  ") + "left-deep  cost " + cost_text(r.left_deep.total) + "\n";
+        out += std::string("    ") + (r.used == JoinSearch::Bushy ? "* " : "  ") + "bushy      cost " + cost_text(r.bushy.total) + "\n";
+    }
+    return out;
+}
+
 std::string chosen_text(const VerboseInfo& verbose) { return indented(print(*verbose.physical)) + "\n"; }
 
 }  // namespace
@@ -120,6 +135,7 @@ std::string format_explain(const PlanPtr& original, const OptimizeResult& result
     std::string out = "Original plan\n" + indented(print(*original, scope, note)) + "\n\nRules fired\n" + rules_text(result);
     out += "\nFinal plan\n" + indented(print(*result.plan, scope, note)) + "\n";
     if (verbose) {
+        if (!verbose->join_orders.empty()) out += "\nJoin order\n" + join_orders_text(verbose->join_orders);
         out += "\nWays to run it\n" + options_text(result.plan, scope, estimator, *verbose);
         out += "\nChosen plan\n" + chosen_text(*verbose);
     }
@@ -159,8 +175,9 @@ ExplainAnalyzeOutput format_explain_analyze(const PlanPtr& original, const Optim
 
     std::string out = "Original plan\n" + indented(print(*original, scope, estimate_only)) + "\n\nRules fired\n" + rules_text(result);
     if (verbose) {
-        out += "\nFinal plan\n" + indented(print(*result.plan, scope, estimate_only));
-        out += "\n\nWays to run it\n" + options_text(result.plan, scope, estimator, *verbose);
+        out += "\nFinal plan\n" + indented(print(*result.plan, scope, estimate_only)) + "\n";
+        if (!verbose->join_orders.empty()) out += "\nJoin order\n" + join_orders_text(verbose->join_orders);
+        out += "\nWays to run it\n" + options_text(result.plan, scope, estimator, *verbose);
         out += "\nChosen plan\n" + chosen_text(*verbose);
         out += "\nActual run\n" + indented(with_real_counts);
     } else {

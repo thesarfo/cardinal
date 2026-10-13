@@ -20,6 +20,13 @@
 
 namespace cardinal {
 
+// How the joins of a query are put in order after the rules have run.
+enum class JoinOrdering {
+    AsWritten,  // left as the query wrote them
+    LeftDeep,
+    Bushy,
+};
+
 // What one operator of the running plan did.
 struct OperatorStat {
     std::string name;  // "SeqScan", "HashJoin", ...
@@ -93,6 +100,15 @@ public:
     void use_cost_based_planner() { forced_planner_.reset(); }
     const std::optional<PlannerOptions>& forced_planner() const { return forced_planner_; }
 
+    // Off by default: joins are ordered left-deep. On, a join may also join two joined groups.
+    void set_bushy_joins(bool bushy) { bushy_ = bushy; }
+    bool bushy_joins() const { return bushy_; }
+
+    // On by default. Off, joins run in the order the query wrote them, with the join method
+    // still chosen by cost. For measuring what a bad order costs.
+    void set_join_ordering(bool on) { reorder_joins_ = on; }
+    bool join_ordering() const { return reorder_joins_; }
+
     // Swap the cost model, for experiments. The default is DefaultCostModel.
     void set_cost_model(std::unique_ptr<CostModel> model) { cost_model_ = std::move(model); }
     const CostModel& cost_model() const { return *cost_model_; }
@@ -102,6 +118,9 @@ public:
     void set_rule_factory(std::function<Stages()> factory);
 
 private:
+    JoinOrdering ordering() const {
+        return !reorder_joins_ ? JoinOrdering::AsWritten : bushy_ ? JoinOrdering::Bushy : JoinOrdering::LeftDeep;
+    }
     void rebuild_optimizer();
 
     Catalog catalog_;
@@ -109,6 +128,8 @@ private:
     std::set<std::string> disabled_rules_;
     RuleOptimizer optimizer_{{}};
     bool optimize_ = true;
+    bool bushy_ = false;
+    bool reorder_joins_ = true;
     std::optional<PlannerOptions> forced_planner_;
     std::unique_ptr<CostModel> cost_model_ = std::make_unique<DefaultCostModel>();
 };

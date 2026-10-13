@@ -1,0 +1,37 @@
+# experiment: e3, every left-deep order of a four-table join, run as written
+# data: t0 and t3 have 5 rows, t1 and t2 have 1000; k has 5, 2, 2 and 5 values; analyzed
+# query: SELECT t0.id, t3.id FROM <tables in the order of the variant>
+#        WHERE t0.id = t1.id AND t1.k = t2.k AND t2.id = t3.id
+# as_written: join ordering off, so the joins run in the order given, the join method still by cost
+# chosen: the same query written t1, t2, t0, t3 with join ordering on
+# runs: 1 warm-up, then 5 timed; exec_ms is the median
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# cpu: Intel(R) Core(TM) i7-14700HX
+# commit: be3d5d6
+experiment,variant,order,est_cost,est_rows_root,actual_rows_root,rows_processed,plan_ms,exec_ms,exec_ms_min,exec_ms_max,commit
+e3,as_written,t0-t1-t2-t3,137.8500,12,13,9574,0.055,1.3613,1.3520,1.5054,be3d5d6
+e3,as_written,t0-t1-t3-t2,63.6500,12,13,2124,0.075,0.5156,0.4838,0.5564,be3d5d6
+e3,as_written,t0-t2-t1-t3,287.5500,12,13,19559,0.069,3.5922,3.4322,3.9159,be3d5d6
+e3,as_written,t0-t2-t3-t1,203.5500,12,13,12134,0.043,1.3743,1.2912,1.5265,be3d5d6
+e3,as_written,t0-t3-t1-t2,64.4500,12,13,2184,0.043,0.3889,0.3823,0.3923,be3d5d6
+e3,as_written,t0-t3-t2-t1,64.4500,12,13,2184,0.040,0.4119,0.4043,0.4223,be3d5d6
+e3,as_written,t1-t0-t2-t3,137.8500,12,13,9574,0.051,1.2159,1.2093,1.2424,be3d5d6
+e3,as_written,t1-t0-t3-t2,63.6500,12,13,2124,0.051,0.4271,0.4173,0.4551,be3d5d6
+e3,as_written,t1-t2-t0-t3,15147.6500,12,13,1509559,0.044,116.7750,114.8247,139.7674,be3d5d6
+e3,as_written,t1-t2-t3-t0,15147.6500,12,13,1509559,0.049,119.7398,116.7831,130.3047,be3d5d6
+e3,as_written,t1-t3-t0-t2,203.5500,12,13,12134,0.030,0.9680,0.9579,0.9802,be3d5d6
+e3,as_written,t1-t3-t2-t0,287.5500,12,13,19559,0.030,1.6725,1.6630,1.6959,be3d5d6
+e3,as_written,t2-t0-t1-t3,287.5500,12,13,19559,0.031,1.6766,1.6709,1.6925,be3d5d6
+e3,as_written,t2-t0-t3-t1,203.5500,12,13,12134,0.030,0.9678,0.9652,0.9746,be3d5d6
+e3,as_written,t2-t1-t0-t3,15147.6500,12,13,1509559,0.058,126.2108,120.5782,130.7095,be3d5d6
+e3,as_written,t2-t1-t3-t0,15147.6500,12,13,1509559,0.058,142.2909,127.3727,234.6682,be3d5d6
+e3,as_written,t2-t3-t0-t1,63.6500,12,13,2124,0.045,0.3886,0.3846,0.3904,be3d5d6
+e3,as_written,t2-t3-t1-t0,137.8500,12,13,9574,0.047,1.1354,1.0919,1.1675,be3d5d6
+e3,as_written,t3-t0-t1-t2,64.4500,12,13,2184,0.040,0.3867,0.3674,0.4074,be3d5d6
+e3,as_written,t3-t0-t2-t1,64.4500,12,13,2184,0.040,0.3950,0.3915,0.4276,be3d5d6
+e3,as_written,t3-t1-t0-t2,203.5500,12,13,12134,0.062,1.7319,1.6541,2.0406,be3d5d6
+e3,as_written,t3-t1-t2-t0,287.5500,12,13,19559,0.074,3.8942,3.7884,3.9205,be3d5d6
+e3,as_written,t3-t2-t0-t1,63.6500,12,13,2124,0.073,0.5943,0.5565,0.5986,be3d5d6
+e3,as_written,t3-t2-t1-t0,137.8500,12,13,9574,0.077,1.7805,1.7606,1.8468,be3d5d6
+e3,chosen,t0-t2-t1-t3,137.8500,12,13,9574,0.139,1.7702,1.7020,1.9361,be3d5d6

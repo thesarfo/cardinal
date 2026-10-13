@@ -1,6 +1,6 @@
 # cardinal
 
-An educational SQL query optimizer and execution engine in C++.
+An educational SQL query optimizer and execution engine.
 
 ## Build
 

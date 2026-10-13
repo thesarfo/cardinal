@@ -49,19 +49,20 @@ std::optional<JoinGraph> extract_join_graph(const PlanPtr& plan);
 
 PlanPtr relation_with_filters(const JoinGraph& graph, std::size_t table);
 
-// The condition is every one that `table` makes checkable; with none it is a cross join.
-PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t joined, std::size_t table, PlanPtr right);
+// `left` reads the tables in `left_tables`, `right` those in `right_tables`. The condition is
+// every one the two together make checkable; with none it is a cross join.
+PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t left_tables, PlanPtr right, std::uint32_t right_tables);
 
 PlanPtr with_constant_filters(const JoinGraph& graph, PlanPtr tree);
 
-bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
+bool connects(const JoinGraph& graph, std::uint32_t a, std::uint32_t b);
 
 // True if join_onto would give a condition a hash join can use: an equality with one side
-// reading only `joined` and the other only `table`. The same test split_join_condition makes.
-bool hash_joinable(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
+// reading only one group and the other only the other. The same test split_join_condition makes.
+bool hash_joinable(const JoinGraph& graph, std::uint32_t left_tables, std::uint32_t right_tables);
 
-// True if nothing joins `table` to the group but something joins another table to it.
-bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t joined, std::size_t table);
+// True if nothing joins the two groups, and each has something else it could join to first.
+bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t a, std::uint32_t b);
 
 // The tables joined left-deep in `order` (a permutation of 0..n-1). Each condition
 // goes on the first join that has every table it reads, a single-table filter goes

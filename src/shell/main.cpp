@@ -46,6 +46,11 @@ int main() {
         // Anything that isn't SQL starts with a dot, so it can't clash with SQL.
         if (pending.empty() && !line.empty() && line[0] == '.') {
             if (line == ".quit") return 0;
+            if (line == ".bushy on" || line == ".bushy off") {
+                db.set_bushy_joins(line == ".bushy on");
+                std::cout << "bushy joins " << (db.bushy_joins() ? "on" : "off") << '\n';
+                continue;
+            }
             if (line.rfind(".stats ", 0) == 0) {
                 std::string name = line.substr(7);
                 const cardinal::Table* table = db.catalog().get_table(name);

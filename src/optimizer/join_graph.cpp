@@ -113,12 +113,12 @@ PlanPtr relation_with_filters(const JoinGraph& graph, std::size_t table) {
     return own.empty() ? plan : make(LogicalFilter{plan, and_all(own)});
 }
 
-PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t joined, std::size_t table, PlanPtr right) {
-    const std::uint32_t after = joined | std::uint32_t{1} << table;
+PlanPtr join_onto(const JoinGraph& graph, PlanPtr left, std::uint32_t left_tables, PlanPtr right, std::uint32_t right_tables) {
+    const std::uint32_t after = left_tables | right_tables;
     std::vector<BoundExprPtr> condition;
     for (const GraphPredicate& p : graph.predicates) {
         if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
-        if ((p.tables & ~after) == 0 && (p.tables & ~joined) != 0) condition.push_back(p.expr);
+        if ((p.tables & ~after) == 0 && (p.tables & left_tables) != 0 && (p.tables & right_tables) != 0) condition.push_back(p.expr);
     }
     return condition.empty() ? make(LogicalJoin{std::move(left), std::move(right), JoinType::Cross, nullptr})
                              : make(LogicalJoin{std::move(left), std::move(right), JoinType::Inner, and_all(condition)});
@@ -132,31 +132,33 @@ PlanPtr with_constant_filters(const JoinGraph& graph, PlanPtr tree) {
     return constants.empty() ? tree : make(LogicalFilter{std::move(tree), and_all(constants)});
 }
 
-bool connects(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
-    const std::uint32_t bit = std::uint32_t{1} << table, after = joined | bit;
+bool connects(const JoinGraph& graph, std::uint32_t a, std::uint32_t b) {
     for (const GraphPredicate& p : graph.predicates) {
         if (p.kind == PredicateKind::SingleTable || p.tables == 0) continue;
-        if ((p.tables & ~after) == 0 && (p.tables & bit) != 0 && (p.tables & joined) != 0) return true;
+        if ((p.tables & ~(a | b)) == 0 && (p.tables & a) != 0 && (p.tables & b) != 0) return true;
     }
     return false;
 }
 
-bool hash_joinable(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
-    const std::uint32_t bit = std::uint32_t{1} << table, after = joined | bit;
+bool hash_joinable(const JoinGraph& graph, std::uint32_t left_tables, std::uint32_t right_tables) {
     auto within = [](std::uint32_t tables, std::uint32_t mask) { return tables != 0 && (tables & ~mask) == 0; };
     for (const GraphPredicate& p : graph.predicates) {
-        if (p.kind == PredicateKind::SingleTable || (p.tables & ~after) != 0 || (p.tables & bit) == 0) continue;
-        if ((within(p.eq_left, joined) && within(p.eq_right, bit)) || (within(p.eq_left, bit) && within(p.eq_right, joined)))
+        if (p.kind == PredicateKind::SingleTable || p.eq_left == 0) continue;
+        if ((within(p.eq_left, left_tables) && within(p.eq_right, right_tables)) ||
+            (within(p.eq_left, right_tables) && within(p.eq_right, left_tables)))
             return true;
     }
     return false;
 }
 
-bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t joined, std::size_t table) {
-    if (connects(graph, joined, table)) return false;
-    for (std::size_t other = 0; other < graph.relations.size(); ++other)
-        if ((joined >> other & 1) == 0 && connects(graph, joined, other)) return true;
-    return false;
+bool cross_join_can_wait(const JoinGraph& graph, std::uint32_t a, std::uint32_t b) {
+    if (connects(graph, a, b)) return false;
+    auto has_neighbour = [&](std::uint32_t group) {
+        for (std::size_t t = 0; t < graph.relations.size(); ++t)
+            if ((group >> t & 1) == 0 && connects(graph, group, std::uint32_t{1} << t)) return true;
+        return false;
+    };
+    return has_neighbour(a) && has_neighbour(b);
 }
 
 PlanPtr build_join_tree(const JoinGraph& graph, const std::vector<std::size_t>& order) {
@@ -170,7 +172,7 @@ PlanPtr build_join_tree(const JoinGraph& graph, const std::vector<std::size_t>& 
     PlanPtr tree = relation_with_filters(graph, order[0]);
     std::uint32_t joined = std::uint32_t{1} << order[0];
     for (std::size_t step = 1; step < n; ++step) {
-        tree = join_onto(graph, tree, joined, order[step], relation_with_filters(graph, order[step]));
+        tree = join_onto(graph, tree, joined, relation_with_filters(graph, order[step]), std::uint32_t{1} << order[step]);
         joined |= std::uint32_t{1} << order[step];
     }
     return with_constant_filters(graph, tree);

@@ -22,8 +22,9 @@
 // kept by the filter, the demo query is run with every rule on and with just the
 // pushdown rule off. Prints CSV on stdout, with a comment header saying what built it.
 //
-// plan: how long the join order search takes, for 2 to 10 tables joined in a line and joined
-// every table to every other. Only the search is timed, with a fresh estimator each run.
+// plan: how long the join order search takes, for 2 to 14 tables joined in a line and joined
+// every table to every other, searched left-deep and bushy. Above 10 tables both are the greedy
+// search. Only the search is timed, with a fresh estimator each run.
 //
 // Rules for numbers you can trust (PLAN.md section 6): release build only, one warm-up
 // run, the median of several runs plus the fastest and slowest, a fixed seed, planning
@@ -93,6 +94,7 @@ struct Options {
     std::vector<int> shares{1, 10, 50};
     int runs = 5;
     int rows = 30000;
+    int middle = 1000;  // e3: rows in the two big tables
     uint64_t seed = 1;
 };
 
@@ -402,9 +404,75 @@ int run_e1(const Options& opt) {
     return 0;
 }
 
+int run_e3(const Options& opt) {
+    std::printf("# experiment: e3, every left-deep order of a four-table join, run as written\n");
+    std::printf("# data: t0 and t3 have 5 rows, t1 and t2 have %d; k has 5, 2, 2 and 5 values; analyzed\n", opt.middle);
+    std::printf("# query: SELECT t0.id, t3.id FROM <tables in the order of the variant>\n");
+    std::printf("#        WHERE t0.id = t1.id AND t1.k = t2.k AND t2.id = t3.id\n");
+    std::printf("# as_written: join ordering off, so the joins run in the order given, the join method still by cost\n");
+    std::printf("# chosen: the same query written t1, t2, t0, t3 with join ordering on\n");
+    std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median\n", opt.runs);
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::printf("# cpu: %s\n", cpu_model().c_str());
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+    std::printf("experiment,variant,order,est_cost,est_rows_root,actual_rows_root,rows_processed,plan_ms,exec_ms,exec_ms_min,"
+                "exec_ms_max,commit\n");
+
+    const std::vector<int> sizes{5, opt.middle, opt.middle, 5}, distinct{5, 2, 2, 5};
+    Database db;
+    for (std::size_t t = 0; t < sizes.size(); ++t) {
+        std::string name = "t" + std::to_string(t);
+        db.execute("CREATE TABLE " + name + " (id INT, k INT)");
+        std::vector<cardinal::Row> rows;
+        for (int n = 0; n < sizes[t]; ++n)
+            rows.push_back({cardinal::Value(std::int64_t{n}), cardinal::Value(std::int64_t{n % distinct[t]})});
+        db.table(name)->insert_rows(std::move(rows));
+        db.execute("ANALYZE " + name);
+    }
+    const std::string where = " WHERE t0.id = t1.id AND t1.k = t2.k AND t2.id = t3.id";
+    auto sql_for = [&](const std::vector<std::size_t>& order) {
+        std::string sql = "SELECT t0.id, t3.id FROM ";
+        for (std::size_t i = 0; i < order.size(); ++i) sql += (i ? ", t" : "t") + std::to_string(order[i]);
+        return sql + where;
+    };
+    auto label = [](const std::vector<std::size_t>& order) {
+        std::string out;
+        for (std::size_t t : order) out += (out.empty() ? "t" : "-t") + std::to_string(t);
+        return out;
+    };
+    auto record = [&](const char* variant, const std::string& order, const std::string& sql) {
+        cardinal::CostBasedPlan priced = db.cost_of(sql);
+        Cell cell = measure(db, sql, opt.runs);
+        std::printf("e3,%s,%s,%.4f,%.0f,%zu,%llu,%.3f,%.4f,%.4f,%.4f,%s\n", variant, order.c_str(), priced.cost.total,
+                    cell.analysis.root_estimate, cell.first.rows.size(),
+                    static_cast<unsigned long long>(cell.first.stats.rows_processed), median(cell.plan_ms), median(cell.exec_ms),
+                    *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
+                    *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str());
+        std::fflush(stdout);
+    };
+
+    db.set_join_ordering(false);
+    std::vector<std::size_t> order{0, 1, 2, 3};
+    do {
+        record("as_written", label(order), sql_for(order));
+    } while (std::next_permutation(order.begin(), order.end()));
+
+    db.set_join_ordering(true);
+    const std::vector<std::size_t> written{1, 2, 0, 3};
+    cardinal::BoundSelect bound = cardinal::bind_select(std::get<cardinal::Select>(cardinal::parse_statement(sql_for(written)).node), db.catalog());
+    cardinal::JoinGraph graph = *cardinal::extract_join_graph(cardinal::input_of(*cardinal::plan_select(bound)));
+    cardinal::CardinalityEstimator estimator(bound.scope, db.catalog());
+    cardinal::DefaultCostModel model;
+    std::string chosen = label(cardinal::choose_join_order(graph, estimator, model).order);
+    record("chosen", chosen, sql_for(written));
+    return 0;
+}
+
 int run_plan(const Options& opt) {
     std::printf("# experiment: plan, how long the join order search takes\n");
-    std::printf("# data: tables t0..t9 (id INT, k INT), 100 rows each, k has 10 values, analyzed\n");
+    std::printf("# data: tables t0..t13 (id INT, k INT), 100 rows each, k has 10 values, analyzed\n");
     std::printf("# shapes: line (t0.k = t1.k, t1.k = t2.k, ...) and clique (every pair joined on k)\n");
     std::printf("# runs: 1 warm-up, then %d timed; plan_ms is the median, with the fastest and slowest\n", opt.runs);
     std::printf("# compiler: %s\n", __VERSION__);
@@ -415,10 +483,12 @@ int run_plan(const Options& opt) {
 #ifndef NDEBUG
     std::printf("# WARNING: not a release build, so these timings mean little\n");
 #endif
-    std::printf("experiment,shape,tables,joins_priced,plan_ms,plan_ms_min,plan_ms_max,commit\n");
+    std::printf("# search: left-deep or bushy; above %zu tables both use the greedy search\n", cardinal::kMaxSearchedRelations);
+    std::printf("experiment,shape,search,tables,joins_priced,plan_ms,plan_ms_min,plan_ms_max,commit\n");
+    constexpr std::size_t kMostTables = 14;
 
     Database db;
-    for (std::size_t t = 0; t < cardinal::kMaxSearchedRelations; ++t) {
+    for (std::size_t t = 0; t < kMostTables; ++t) {
         std::string name = "t" + std::to_string(t);
         db.execute("CREATE TABLE " + name + " (id INT, k INT)");
         std::vector<cardinal::Row> rows;
@@ -428,7 +498,8 @@ int run_plan(const Options& opt) {
     }
 
     for (const char* shape : {"line", "clique"}) {
-        for (std::size_t n = 2; n <= cardinal::kMaxSearchedRelations; ++n) {
+      for (bool bushy : {false, true}) {
+        for (std::size_t n = 2; n <= kMostTables; ++n) {
             std::string sql = "SELECT * FROM t0", where;
             for (std::size_t t = 1; t < n; ++t) sql += ", t" + std::to_string(t);
             for (std::size_t a = 0; a < n; ++a)
@@ -445,14 +516,16 @@ int run_plan(const Options& opt) {
             for (int run = 0; run <= opt.runs; ++run) {
                 auto started = std::chrono::steady_clock::now();
                 cardinal::CardinalityEstimator estimator(bound.scope, db.catalog());
-                priced = cardinal::choose_join_order(graph, estimator, model)->joins_priced;
+                priced = cardinal::choose_join_order(graph, estimator, model, bushy).joins_priced;
                 double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
                 if (run > 0) times.push_back(ms);
             }
-            std::printf("plan,%s,%zu,%zu,%.3f,%.3f,%.3f,%s\n", shape, n, priced, median(times),
+            const char* search = n > cardinal::kMaxSearchedRelations ? "greedy" : bushy ? "bushy" : "left-deep";
+            std::printf("plan,%s,%s,%zu,%zu,%.3f,%.3f,%.3f,%s\n", shape, search, n, priced, median(times),
                         *std::min_element(times.begin(), times.end()), *std::max_element(times.begin(), times.end()), commit.c_str());
             std::fflush(stdout);
         }
+      }
     }
     return 0;
 }
@@ -461,10 +534,11 @@ int run_plan(const Options& opt) {
 
 int main(int argc, char** argv) {
     std::string experiment = argc > 1 ? argv[1] : "";
-    if (experiment != "e1" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
+    if (experiment != "e1" && experiment != "e3" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
         experiment != "plan") {
         std::fprintf(stderr,
                      "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
+                     "       cardinal_bench e3 [--middle 1000] [--runs 3]\n"
                      "       cardinal_bench e5 [--rows 30000] [--seed 1]\n"
                      "       cardinal_bench calibrate [--runs 7] [--seed 1]\n"
                      "       cardinal_bench e4 [--runs 3] [--seed 1]\n"
@@ -477,6 +551,7 @@ int main(int argc, char** argv) {
         if (flag == "--sizes") opt.sizes = parse_list(value);
         else if (flag == "--shares") opt.shares = parse_list(value);
         else if (flag == "--runs") opt.runs = std::max(1, std::atoi(value.c_str()));
+        else if (flag == "--middle") opt.middle = std::max(1, std::atoi(value.c_str()));
         else if (flag == "--rows") opt.rows = std::max(1, std::atoi(value.c_str()));
         else if (flag == "--seed") opt.seed = std::strtoull(value.c_str(), nullptr, 10);
         else {
@@ -485,6 +560,7 @@ int main(int argc, char** argv) {
         }
     }
     if (experiment == "calibrate") return run_calibrate(opt);
+    if (experiment == "e3") return run_e3(opt);
     if (experiment == "e4") return run_e4(opt);
     if (experiment == "plan") return run_plan(opt);
     return experiment == "e5" ? run_e5(opt) : run_e1(opt);
