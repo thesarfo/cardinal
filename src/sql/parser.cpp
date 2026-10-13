@@ -189,7 +189,9 @@ private:
             sel.items.push_back({Star{}});
         } else {
             do {
-                sel.items.push_back({expression(kOr)});
+                SelectItem item{expression(kOr)};
+                if (match(TokenKind::As)) item.alias = name("a column alias");
+                sel.items.push_back(std::move(item));
             } while (match(TokenKind::Comma));
         }
         expect(TokenKind::From);
@@ -208,6 +210,13 @@ private:
             }
         }
         if (match(TokenKind::Where)) sel.where = expression(kOr);
+        if (match(TokenKind::Group)) {
+            expect(TokenKind::By);
+            do {
+                sel.group_by.push_back(expression(kOr));
+            } while (match(TokenKind::Comma));
+        }
+        if (match(TokenKind::Having)) sel.having = expression(kOr);
         if (match(TokenKind::Order)) {
             expect(TokenKind::By);
             do {
@@ -313,6 +322,16 @@ private:
             case TokenKind::False: return lit(Value(false));
             case TokenKind::Null: return lit(Value());
             case TokenKind::Identifier: {
+                if (peek().kind == TokenKind::LParen) {
+                    advance();
+                    if (match(TokenKind::Star)) {
+                        expect(TokenKind::RParen);
+                        return make_expr(FunctionCall{t.text, nullptr, true});
+                    }
+                    ExprPtr arg = expression(kOr);
+                    expect(TokenKind::RParen);
+                    return make_expr(FunctionCall{t.text, std::move(arg), false});
+                }
                 if (match(TokenKind::Dot)) {
                     const Token& name = peek();
                     if (name.kind != TokenKind::Identifier)

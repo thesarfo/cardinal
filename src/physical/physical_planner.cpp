@@ -111,6 +111,21 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                     items.push_back({to_positions(item.expr, in.layout), item.name});
                 return Planned{make(PhysicalProject{in.plan, std::move(items)}), {}};
             },
+            [&](const LogicalAggregate& n) {
+                Planned in = plan_node(*n.input, options);
+                std::vector<BoundExprPtr> keys;
+                Layout layout;
+                for (const GroupKey& key : n.keys) {
+                    keys.push_back(to_positions(key.expr, in.layout));
+                    layout.push_back(key.output);
+                }
+                std::vector<PhysicalAggregateCall> calls;
+                for (const AggregateItem& item : n.aggregates) {
+                    calls.push_back({item.func, item.arg ? to_positions(item.arg, in.layout) : nullptr});
+                    layout.push_back(item.output);
+                }
+                return Planned{make(PhysicalHashAggregate{in.plan, std::move(keys), std::move(calls)}), layout};
+            },
             [&](const LogicalSort& n) {
                 Planned in = plan_node(*n.input, options);
                 std::vector<SortKey> keys;

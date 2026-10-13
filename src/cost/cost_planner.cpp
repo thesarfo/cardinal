@@ -78,6 +78,11 @@ public:
                     record(node, {{"Limit", cost}});
                     return cost;
                 },
+                [&](const LogicalAggregate& n) {
+                    Cost cost = price(n.input) + model_.hash_aggregate(estimator_.rows(n.input), estimator_.rows(node));
+                    record(node, {{"HashAggregate", cost}});
+                    return cost;
+                },
                 [&](const LogicalJoin& n) { return price_join(node, n); },
             },
             node->node);

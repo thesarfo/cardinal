@@ -27,6 +27,7 @@ const std::unordered_map<std::string, TokenKind>& keywords() {
         {"INNER", TokenKind::Inner},     {"ON", TokenKind::On},
         {"AS", TokenKind::As},           {"ANALYZE", TokenKind::Analyze},
         {"VERBOSE", TokenKind::Verbose},
+        {"GROUP", TokenKind::Group},     {"HAVING", TokenKind::Having},
     };
     return table;
 }
@@ -175,6 +176,8 @@ const char* token_kind_name(TokenKind kind) {
         case TokenKind::By: return "BY";
         case TokenKind::Asc: return "ASC";
         case TokenKind::Desc: return "DESC";
+        case TokenKind::Group: return "GROUP";
+        case TokenKind::Having: return "HAVING";
         case TokenKind::Limit: return "LIMIT";
         case TokenKind::Explain: return "EXPLAIN";
         case TokenKind::And: return "AND";

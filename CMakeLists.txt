@@ -28,6 +28,7 @@ add_library(cardinal_core
   src/engine/explain.cpp
   src/engine/fuzz.cpp
   src/engine/result_format.cpp
+  src/exec/aggregate.cpp
   src/exec/build.cpp
   src/exec/filter.cpp
   src/exec/hash_join.cpp

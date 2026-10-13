@@ -46,6 +46,14 @@ std::optional<PlanPtr> rewrite_expressions(const PlanPtr& node, const ExprRewrit
                 return changed ? make(LogicalSort{n.input, std::move(keys)}) : node;
             },
             [&](const LogicalLimit&) { return node; },
+            [&](const LogicalAggregate& n) {
+                std::vector<GroupKey> keys;
+                for (const GroupKey& key : n.keys) keys.push_back({apply(key.expr), key.output});
+                std::vector<AggregateItem> aggregates;
+                for (const AggregateItem& item : n.aggregates)
+                    aggregates.push_back({item.func, item.arg ? apply(item.arg) : nullptr, item.output});
+                return changed ? make(LogicalAggregate{n.input, std::move(keys), std::move(aggregates)}) : node;
+            },
             [&](const LogicalJoin& n) {
                 if (!n.condition) return node;
                 BoundExprPtr condition = apply(n.condition);

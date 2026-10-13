@@ -33,6 +33,8 @@ struct QuerySpec {
     std::vector<JoinSpec> joins;
     std::vector<std::string> select;  // SQL text of each item; "*" on its own is allowed
     std::optional<BoolExpr> where;
+    std::vector<std::string> group_by;  // SQL text of each key
+    std::optional<BoolExpr> having;
     std::vector<std::pair<std::string, bool>> order_by;  // expression, descending
     std::optional<int> limit;
 };

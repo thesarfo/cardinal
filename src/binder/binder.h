@@ -31,6 +31,13 @@ struct BoundSelect {
     std::vector<BoundJoin> joins;   // joins[i] adds scope.tables()[i + 1]
     std::vector<BoundSelectItem> items;  // `*` already expanded
     BoundExprPtr where;                  // null when there is no WHERE
+    // Set when the query has GROUP BY, HAVING or a total. Everything below (items, having,
+    // order_by) then reads the Aggregate's output columns: the group keys' `output` ids and
+    // the totals' fresh ids. With no group_by the whole input is one group.
+    bool aggregated = false;
+    std::vector<GroupKey> group_by;
+    std::vector<AggregateItem> aggregates;
+    BoundExprPtr having;  // null when there is no HAVING
     std::vector<BoundOrderKey> order_by;
     std::optional<std::int64_t> limit;
 };

@@ -53,6 +53,28 @@ struct BoundExpr {
     std::optional<Type> type;
 };
 
+// The totals SQL can compute over a group of rows. Count skips NULLs, CountStar counts rows.
+// Sum, Avg, Min and Max give NULL for a group with no non-NULL value.
+enum class AggFunc { CountStar, Count, Sum, Avg, Min, Max };
+
+// "count", "sum", ...; CountStar is also "count".
+const char* agg_name(AggFunc func);
+
+// One group key of an Aggregate: the expression that is computed per input row, and the
+// column id its value goes by in the rows above. A key that is a plain column keeps its
+// own id, so what reads it above the Aggregate needs no rewriting.
+struct GroupKey {
+    BoundExprPtr expr;
+    ColumnId output;
+};
+
+// One total: `arg` is null for CountStar. `output` is a fresh column id for the result.
+struct AggregateItem {
+    AggFunc func;
+    BoundExprPtr arg;
+    ColumnId output;
+};
+
 // Every column the expression reads.
 std::set<ColumnId> columns_used(const BoundExpr& expr);
 

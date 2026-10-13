@@ -26,6 +26,16 @@ void write(const LogicalPlan& plan, const Scope& scope, const NodeNote& note, in
                 for (ColumnId id : n.columns) columns += (columns.empty() ? "" : ", ") + format_column(id, scope);
                 return "Prune[" + columns + "]";
             },
+            [&](const LogicalAggregate& n) {
+                std::string keys, totals;
+                for (const GroupKey& key : n.keys) keys += (keys.empty() ? "" : ", ") + format(*key.expr, scope);
+                for (const AggregateItem& item : n.aggregates) {
+                    std::string call = item.func == AggFunc::CountStar ? "count(*)"
+                                                                       : std::string(agg_name(item.func)) + "(" + format(*item.arg, scope) + ")";
+                    totals += (totals.empty() ? "" : ", ") + call;
+                }
+                return "Aggregate[" + (keys.empty() ? std::string("one group") : "by " + keys) + "; " + totals + "]";
+            },
             [&](const LogicalJoin& n) {
                 if (n.type == JoinType::Cross) return std::string("Join[CROSS]");
                 return "Join[INNER ON " + format(*n.condition, scope) + "]";

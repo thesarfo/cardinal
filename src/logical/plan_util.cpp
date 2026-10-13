@@ -43,6 +43,12 @@ std::vector<ColumnId> output_columns(const LogicalPlan& node) {
             [](const LogicalEmpty& n) { return n.columns; },
             [](const LogicalProject&) { return std::vector<ColumnId>{}; },
             [](const LogicalPrune& n) { return n.columns; },
+            [](const LogicalAggregate& n) {
+                std::vector<ColumnId> columns;
+                for (const GroupKey& key : n.keys) columns.push_back(key.output);
+                for (const AggregateItem& item : n.aggregates) columns.push_back(item.output);
+                return columns;
+            },
             [](const LogicalJoin& n) {
                 std::vector<ColumnId> columns = output_columns(*n.left);
                 std::vector<ColumnId> right = output_columns(*n.right);
@@ -93,6 +99,17 @@ bool items_same(const std::vector<ProjectItem>& a, const std::vector<ProjectItem
     return true;
 }
 
+bool aggregates_same(const LogicalAggregate& a, const LogicalAggregate& b) {
+    if (a.keys.size() != b.keys.size() || a.aggregates.size() != b.aggregates.size()) return false;
+    for (std::size_t i = 0; i < a.keys.size(); ++i)
+        if (a.keys[i].output != b.keys[i].output || !expr_same(a.keys[i].expr, b.keys[i].expr)) return false;
+    for (std::size_t i = 0; i < a.aggregates.size(); ++i) {
+        const AggregateItem &x = a.aggregates[i], &y = b.aggregates[i];
+        if (x.func != y.func || x.output != y.output || !expr_same(x.arg, y.arg)) return false;
+    }
+    return true;
+}
+
 // Compares the node itself, not its inputs.
 bool node_same(const LogicalPlan& a, const LogicalPlan& b) {
     if (a.node.index() != b.node.index()) return false;
@@ -108,6 +125,7 @@ bool node_same(const LogicalPlan& a, const LogicalPlan& b) {
             [&](const LogicalSort& x) { return keys_same(x.keys, std::get<LogicalSort>(b.node).keys); },
             [&](const LogicalLimit& x) { return x.count == std::get<LogicalLimit>(b.node).count; },
             [&](const LogicalPrune& x) { return x.columns == std::get<LogicalPrune>(b.node).columns; },
+            [&](const LogicalAggregate& x) { return aggregates_same(x, std::get<LogicalAggregate>(b.node)); },
             [&](const LogicalJoin& x) {
                 const auto& y = std::get<LogicalJoin>(b.node);
                 return x.type == y.type && expr_same(x.condition, y.condition);

@@ -199,6 +199,7 @@ TEST_CASE("planner: a tie goes to the nested loop, then hash building from the r
         Cost sort(double) const override { return {1}; }
         Cost nested_loop_join(double, double, double) const override { return {7}; }
         Cost hash_join(double, double, double) const override { return {7}; }
+        Cost hash_aggregate(double, double) const override { return {1}; }
     };
     Database db = sized(10, 10);
     REQUIRE(text(plan(db, kJoin, Flat())).find("NestedLoopJoin") != std::string::npos);

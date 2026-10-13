@@ -31,6 +31,9 @@ ExprPtr clone(const Expr& expr) {
                 return make_expr(Between{clone(*n.operand), clone(*n.low), clone(*n.high), n.negated});
             },
             [](const InList& n) { return make_expr(InList{clone(*n.operand), clone_all(n.items), n.negated}); },
+            [](const FunctionCall& n) {
+                return make_expr(FunctionCall{n.name, n.arg ? clone(*n.arg) : nullptr, n.star});
+            },
         },
         expr.node);
 }
@@ -41,13 +44,15 @@ Select clone(const Select& select) {
         if (std::holds_alternative<Star>(item.item)) {
             out.items.push_back({Star{}});
         } else {
-            out.items.push_back({clone(*std::get<ExprPtr>(item.item))});
+            out.items.push_back({clone(*std::get<ExprPtr>(item.item)), item.alias});
         }
     }
     out.from = clone(select.from);
     for (const JoinClause& join : select.joins)
         out.joins.push_back({clone(join.table), join.on ? clone(*join.on) : nullptr});
     if (select.where) out.where = clone(*select.where);
+    out.group_by = clone_all(select.group_by);
+    if (select.having) out.having = clone(*select.having);
     for (const OrderKey& key : select.order_by) out.order_by.push_back({clone(*key.expr), key.descending});
     out.limit = select.limit;
     return out;

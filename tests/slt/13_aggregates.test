@@ -1,0 +1,195 @@
+# GROUP BY, HAVING and the totals COUNT, SUM, AVG, MIN and MAX.
+
+statement ok
+CREATE TABLE o (id INT, user_id INT, amount DOUBLE, status TEXT)
+
+statement ok
+INSERT INTO o VALUES (1, 1, 10.5, 'paid'), (2, 1, 4.5, 'paid'), (3, 2, 7.0, 'open')
+
+statement ok
+INSERT INTO o VALUES (4, 2, NULL, 'paid'), (5, 3, 1.0, NULL), (6, NULL, 2.0, 'open')
+
+statement ok
+CREATE TABLE empty (a INT, b TEXT)
+
+# One row per group, and NULL is a group of its own.
+query IIRRTI rowsort
+SELECT user_id, COUNT(*), SUM(amount), AVG(amount), MIN(status), MAX(id) FROM o GROUP BY user_id
+----
+1
+2
+15.000
+7.500
+paid
+2
+2
+2
+7.000
+7.000
+open
+4
+3
+1
+1.000
+1.000
+NULL
+5
+NULL
+1
+2.000
+2.000
+open
+6
+
+# COUNT(x) skips NULLs, COUNT(*) does not.
+query III
+SELECT COUNT(*), COUNT(amount), COUNT(status) FROM o
+----
+6
+5
+5
+
+# With no GROUP BY the whole table is one group, even when it has no rows.
+query I
+SELECT COUNT(*) FROM empty
+----
+0
+
+query TTT
+SELECT MIN(a), MAX(b), SUM(a) FROM empty
+----
+NULL
+NULL
+NULL
+
+# With GROUP BY, no rows in means no groups out.
+query IT
+SELECT a, b FROM empty GROUP BY a, b
+----
+
+query I
+SELECT COUNT(*) FROM o WHERE id > 100
+----
+0
+
+query IR
+SELECT user_id, SUM(amount) FROM o WHERE id > 100 GROUP BY user_id
+----
+
+# HAVING filters groups, and may use a total that is not selected.
+query TI rowsort
+SELECT status, COUNT(*) FROM o GROUP BY status HAVING COUNT(*) > 1
+----
+open
+2
+paid
+3
+
+query I
+SELECT user_id FROM o GROUP BY user_id HAVING SUM(amount) > 10
+----
+1
+
+# Aliases, and ORDER BY on a total.
+query TI
+SELECT status, COUNT(*) AS n FROM o GROUP BY status ORDER BY n DESC, status
+----
+paid
+3
+open
+2
+NULL
+1
+
+# A group key can be an expression, and the select list can use it.
+query II rowsort
+SELECT id % 2, COUNT(*) FROM o GROUP BY id % 2
+----
+0
+3
+1
+3
+
+query I rowsort
+SELECT (id % 2) + 10 FROM o GROUP BY id % 2
+----
+10
+11
+
+# A total inside an expression, and the same total written twice.
+query IRR
+SELECT user_id, SUM(amount) * 2, SUM(amount) FROM o WHERE user_id = 1 GROUP BY user_id
+----
+1
+30.000
+15.000
+
+# Whole-number totals stay whole; AVG is a number with a fraction.
+query IR
+SELECT SUM(id), AVG(id) FROM o
+----
+21
+3.500
+
+# Totals over a join.
+statement ok
+CREATE TABLE u (id INT, name TEXT)
+
+statement ok
+INSERT INTO u VALUES (1, 'ama'), (2, 'kofi'), (4, 'esi')
+
+query TIR rowsort
+SELECT u.name, COUNT(*), SUM(o.amount) FROM u JOIN o ON u.id = o.user_id GROUP BY u.name
+----
+ama
+2
+15.000
+kofi
+2
+7.000
+
+# Errors.
+statement error
+SELECT user_id, amount FROM o GROUP BY user_id
+----
+must appear in GROUP BY
+
+statement error
+SELECT id FROM o WHERE COUNT(*) > 1
+----
+not allowed in WHERE
+
+statement error
+SELECT SUM(COUNT(*)) FROM o
+----
+not allowed in an aggregate's argument
+
+statement error
+SELECT * FROM o GROUP BY SUM(id)
+----
+not allowed in GROUP BY
+
+statement error
+SELECT SUM(status) FROM o
+----
+sum needs numbers
+
+statement error
+SELECT FOO(id) FROM o
+----
+unknown function
+
+statement error
+SELECT SUM(*) FROM o
+----
+only COUNT can take *
+
+statement error
+SELECT id FROM o HAVING id > 1
+----
+must appear in GROUP BY
+
+statement error
+SELECT COUNT(*) FROM o HAVING 1
+----
+HAVING needs a true/false value

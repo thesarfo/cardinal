@@ -3,12 +3,14 @@
 // Rewrite rules that are wrong on purpose, for checking that the answer checker and the
 // fuzzer notice. Each one breaks a different promise.
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 
 #include "engine/database.h"
+#include "logical/plan_util.h"
 #include "optimizer/default_rules.h"
 #include "optimizer/rule.h"
 
@@ -62,6 +64,9 @@ public:
     std::optional<PlanPtr> apply(const PlanPtr& node) const override {
         const auto* s = std::get_if<LogicalSort>(&node->node);
         if (!s || s->keys.size() != 1) return std::nullopt;
+        // Only where column 0 is still there: above an Aggregate it may not be.
+        std::vector<ColumnId> below = output_columns(*s->input);
+        if (std::find(below.begin(), below.end(), ColumnId{0}) == below.end()) return std::nullopt;
         auto id = std::make_shared<const BoundExpr>(BoundExpr{BoundColumn{ColumnId{0}}, Type::Int});
         return make(LogicalSort{s->input, {s->keys[0], {id, true}}});
     }

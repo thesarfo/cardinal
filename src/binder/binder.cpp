@@ -1,5 +1,7 @@
 #include "binder/binder.h"
 
+#include <cctype>
+
 #include "common/error.h"
 #include "sql/ast_printer.h"
 
@@ -99,9 +101,54 @@ BoundExprPtr negate(const BoundExprPtr& e) {
     return make(BoundUnary{UnaryOp::Not, e}, Type::Bool);
 }
 
+// Where totals found while binding are collected. `scope` hands out their column ids.
+struct Aggregation {
+    Scope& scope;
+    std::vector<AggregateItem> items;
+};
+
+std::string lower_case(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+std::optional<AggFunc> aggregate_named(const std::string& name, bool star) {
+    std::string n = lower_case(name);
+    if (n == "count") return star ? AggFunc::CountStar : AggFunc::Count;
+    if (n == "sum") return AggFunc::Sum;
+    if (n == "avg") return AggFunc::Avg;
+    if (n == "min") return AggFunc::Min;
+    if (n == "max") return AggFunc::Max;
+    return std::nullopt;
+}
+
+// True if a total is called anywhere in the expression.
+bool has_aggregate(const Expr& expr) {
+    return std::visit(
+        Overloaded{
+            [](const Literal&) { return false; },
+            [](const ColumnRef&) { return false; },
+            [](const Unary& n) { return has_aggregate(*n.operand); },
+            [](const Binary& n) { return has_aggregate(*n.left) || has_aggregate(*n.right); },
+            [](const IsNull& n) { return has_aggregate(*n.operand); },
+            [](const Between& n) { return has_aggregate(*n.operand) || has_aggregate(*n.low) || has_aggregate(*n.high); },
+            [](const InList& n) {
+                if (has_aggregate(*n.operand)) return true;
+                for (const ExprPtr& item : n.items)
+                    if (has_aggregate(*item)) return true;
+                return false;
+            },
+            [](const FunctionCall& n) { return aggregate_named(n.name, n.star).has_value(); },
+        },
+        expr.node);
+}
+
 class ExprBinder {
 public:
-    explicit ExprBinder(const Scope& scope) : scope_(scope) {}
+    // With `aggregation`, a call to COUNT, SUM and so on is allowed and becomes a column of
+    // the Aggregate's output. Without, it is an error that names `clause`.
+    explicit ExprBinder(const Scope& scope, Aggregation* aggregation = nullptr, const char* clause = "this place")
+        : scope_(scope), aggregation_(aggregation), clause_(clause) {}
 
     BoundExprPtr bind(const Expr& expr) {
         return std::visit(
@@ -154,17 +201,82 @@ public:
                     }
                     return n.negated ? negate(any) : any;
                 },
+                [&](const FunctionCall& n) { return bind_call(n); },
             },
             expr.node);
     }
 
 private:
+    BoundExprPtr bind_call(const FunctionCall& call) {
+        std::optional<AggFunc> func = aggregate_named(call.name, call.star);
+        if (!func) {
+            if (call.star) throw DbError("only COUNT can take *, not " + call.name);
+            throw DbError("unknown function " + call.name);
+        }
+        if (call.star && *func != AggFunc::CountStar) throw DbError("only COUNT can take *, not " + call.name);
+        if (!aggregation_) throw DbError(std::string("aggregate functions are not allowed in ") + clause_);
+
+        BoundExprPtr arg;
+        if (!call.star) arg = ExprBinder(scope_, nullptr, "an aggregate's argument").bind(*call.arg);
+        MaybeType arg_type = arg ? arg->type : MaybeType{};
+        if ((*func == AggFunc::Sum || *func == AggFunc::Avg) && !is_number(arg_type))
+            throw DbError(std::string(agg_name(*func)) + " needs numbers, got " + label(arg_type));
+
+        MaybeType type;
+        switch (*func) {
+            case AggFunc::CountStar:
+            case AggFunc::Count: type = Type::Int; break;
+            case AggFunc::Avg: type = Type::Double; break;
+            default: type = arg_type; break;  // Sum, Min, Max
+        }
+
+        // The same total written twice is worked out once.
+        for (const AggregateItem& item : aggregation_->items) {
+            bool same_arg = (!item.arg && !arg) || (item.arg && arg && expr_equal(*item.arg, *arg));
+            if (item.func == *func && same_arg) return make(BoundColumn{item.output}, type);
+        }
+        ColumnId output = aggregation_->scope.add_computed(call.star ? "count(*)" : "?column?", type.value_or(Type::Int));
+        aggregation_->items.push_back({*func, arg, output});
+        return make(BoundColumn{output}, type);
+    }
+
     const Scope& scope_;
+    Aggregation* aggregation_;
+    const char* clause_;
 };
 
 std::string output_name(const Expr& expr) {
     if (const auto* c = std::get_if<ColumnRef>(&expr.node)) return c->name;
+    if (const auto* f = std::get_if<FunctionCall>(&expr.node)) {
+        if (f->star) return lower_case(f->name) + "(*)";
+        if (const auto* c = std::get_if<ColumnRef>(&f->arg->node)) return lower_case(f->name) + "(" + c->name + ")";
+    }
     return "?column?";
+}
+
+// Above an Aggregate, only the group keys and the totals exist. A subtree equal to a group
+// key's expression becomes that key's column; any base column still left is not grouped.
+BoundExprPtr over_groups(const BoundExprPtr& expr, const std::vector<GroupKey>& keys, const Scope& scope) {
+    for (const GroupKey& key : keys)
+        if (expr_equal(*expr, *key.expr)) return make(BoundColumn{key.output}, expr->type);
+
+    return std::visit(
+        Overloaded{
+            [&](const BoundLiteral&) { return expr; },
+            [&](const BoundColumn& n) -> BoundExprPtr {
+                for (const GroupKey& key : keys)
+                    if (key.output == n.id) return expr;
+                if (scope.meta(n.id).table.empty()) return expr;  // a total, already a column of the Aggregate
+                const ColumnMeta& meta = scope.meta(n.id);
+                throw DbError("column " + meta.table + "." + meta.name + " must appear in GROUP BY or be used in an aggregate");
+            },
+            [&](const BoundUnary& n) { return make(BoundUnary{n.op, over_groups(n.operand, keys, scope)}, expr->type); },
+            [&](const BoundBinary& n) {
+                return make(BoundBinary{n.op, over_groups(n.left, keys, scope), over_groups(n.right, keys, scope)}, expr->type);
+            },
+            [&](const BoundIsNull& n) { return make(BoundIsNull{over_groups(n.operand, keys, scope), n.negated}, expr->type); },
+        },
+        expr->node);
 }
 
 }  // namespace
@@ -187,35 +299,79 @@ BoundSelect bind_select(const Select& select, const Catalog& catalog) {
         const JoinClause& join = select.joins[i];
         BoundJoin bound_join;
         if (join.on) {
-            bound_join.condition = bind_expression(*join.on, bound.scope.prefix(i + 2));
+            Scope visible = bound.scope.prefix(i + 2);
+            bound_join.condition = ExprBinder(visible, nullptr, "ON").bind(*join.on);
             if (!is_bool(bound_join.condition->type))
                 throw DbError("ON needs a true/false value, got " + label(bound_join.condition->type));
         }
         bound.joins.push_back(std::move(bound_join));
     }
-    ExprBinder binder(bound.scope);
+    ExprBinder where_binder(bound.scope, nullptr, "WHERE");
 
+    // Totals anywhere, GROUP BY, or HAVING make this an aggregate query.
+    bool has_totals = !select.group_by.empty() || select.having != nullptr;
+    for (const SelectItem& item : select.items)
+        if (const auto* e = std::get_if<ExprPtr>(&item.item)) has_totals = has_totals || has_aggregate(**e);
+    for (const OrderKey& key : select.order_by) has_totals = has_totals || has_aggregate(*key.expr);
+    bound.aggregated = has_totals;
+
+    if (select.where) {
+        bound.where = where_binder.bind(*select.where);
+        if (!is_bool(bound.where->type))
+            throw DbError("WHERE needs a true/false value, got " + label(bound.where->type));
+    }
+
+    Aggregation aggregation{bound.scope, {}};
+    ExprBinder binder(bound.scope, bound.aggregated ? &aggregation : nullptr, "this place");
+    if (bound.aggregated) {
+        ExprBinder key_binder(bound.scope, nullptr, "GROUP BY");
+        for (const ExprPtr& key : select.group_by) {
+            BoundExprPtr expr = key_binder.bind(*key);
+            bool duplicate = false;
+            for (const GroupKey& existing : bound.group_by) duplicate = duplicate || expr_equal(*existing.expr, *expr);
+            if (duplicate) continue;
+            ColumnId output = std::holds_alternative<BoundColumn>(expr->node)
+                                  ? std::get<BoundColumn>(expr->node).id
+                                  : bound.scope.add_computed("?column?", expr->type.value_or(Type::Int));
+            bound.group_by.push_back({expr, output});
+        }
+    }
+    // Over the Aggregate's output: totals are columns already, and group keys are replaced.
+    auto above = [&](const BoundExprPtr& expr) {
+        return bound.aggregated ? over_groups(expr, bound.group_by, bound.scope) : expr;
+    };
+
+    std::vector<std::pair<std::string, std::size_t>> aliased;  // alias -> index into bound.items
     for (const SelectItem& item : select.items) {
         if (std::holds_alternative<Star>(item.item)) {
             for (const BoundTable& t : bound.scope.tables()) {
                 for (ColumnId id : t.columns) {
                     const ColumnMeta& meta = bound.scope.meta(id);
-                    bound.items.push_back({make(BoundColumn{id}, meta.type), meta.name});
+                    bound.items.push_back({above(make(BoundColumn{id}, meta.type)), meta.name});
                 }
             }
         } else {
             const Expr& expr = *std::get<ExprPtr>(item.item);
-            bound.items.push_back({binder.bind(expr), output_name(expr)});
+            bound.items.push_back({above(binder.bind(expr)), item.alias ? *item.alias : output_name(expr)});
+            if (item.alias) aliased.push_back({*item.alias, bound.items.size() - 1});
         }
     }
 
-    if (select.where) {
-        bound.where = binder.bind(*select.where);
-        if (!is_bool(bound.where->type))
-            throw DbError("WHERE needs a true/false value, got " + label(bound.where->type));
+    if (select.having) {
+        bound.having = above(binder.bind(*select.having));
+        if (!is_bool(bound.having->type))
+            throw DbError("HAVING needs a true/false value, got " + label(bound.having->type));
     }
-    for (const OrderKey& key : select.order_by)
-        bound.order_by.push_back({binder.bind(*key.expr), key.descending});
+    for (const OrderKey& key : select.order_by) {
+        // A bare name that is a select item's alias means that item.
+        const auto* named = std::get_if<ColumnRef>(&key.expr->node);
+        BoundExprPtr by_alias;
+        if (named && !named->table)
+            for (const auto& [alias, index] : aliased)
+                if (alias == named->name) by_alias = bound.items[index].expr;
+        bound.order_by.push_back({by_alias ? by_alias : above(binder.bind(*key.expr)), key.descending});
+    }
+    bound.aggregates = std::move(aggregation.items);
     bound.limit = select.limit;
     return bound;
 }

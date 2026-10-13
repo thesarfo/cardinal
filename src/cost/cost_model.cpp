@@ -43,4 +43,11 @@ Cost DefaultCostModel::hash_join(double build_rows, double probe_rows, double ou
             rows_or_zero(probe_rows) * params_.per_check_cost + rows_or_zero(output_rows) * params_.per_row_cost};
 }
 
+Cost DefaultCostModel::hash_aggregate(double input_rows, double groups) const {
+    // Each input row is hashed and looked up (a check) and folded into its group (a row's
+    // worth of handling); each group is then built and passed on (a row).
+    return {rows_or_zero(input_rows) * (params_.per_check_cost + params_.per_row_cost) +
+            rows_or_zero(groups) * params_.per_row_cost};
+}
+
 }  // namespace cardinal

@@ -56,9 +56,12 @@ TEST_CASE("generator: a spread of queries, not one shape") {
         if (q.where && q.where->kind == BoolExpr::Kind::Or) seen.insert("or");
         if (q.where && q.where->kind == BoolExpr::Kind::And) seen.insert("and");
         if (q.where && q.where->kind == BoolExpr::Kind::Not) seen.insert("not");
+        if (!q.group_by.empty()) seen.insert("group-by");
+        if (q.having) seen.insert("having");
+        if (q.group_by.empty() && !q.select.empty() && q.select[0].rfind("COUNT(*)", 0) == 0) seen.insert("one-group");
     }
     REQUIRE(max_tables == 6);
-    REQUIRE(seen == std::set<std::string>{"join-on", "comma-join", "where", "order-by", "limit", "star", "or", "and", "not"});
+    REQUIRE(seen == std::set<std::string>{"join-on", "comma-join", "where", "order-by", "limit", "star", "or", "and", "not", "group-by", "having", "one-group"});
 }
 
 TEST_CASE("generator: tables get random rows, with NULLs, from the seed") {

@@ -54,6 +54,17 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
                             (key.descending ? " DESC" : " ASC");
                 return "Sort[" + keys + "]";
             },
+            [&](const PhysicalHashAggregate& n) {
+                children = {n.input.get()};
+                std::string keys, totals;
+                for (const BoundExprPtr& key : n.keys) keys += (keys.empty() ? "" : ", ") + format(*key, position);
+                for (const PhysicalAggregateCall& call : n.aggregates) {
+                    std::string text = call.func == AggFunc::CountStar ? "count(*)"
+                                                                       : std::string(agg_name(call.func)) + "(" + format(*call.arg, position) + ")";
+                    totals += (totals.empty() ? "" : ", ") + text;
+                }
+                return "HashAggregate[" + (keys.empty() ? std::string("one group") : "by " + keys) + "; " + totals + "]";
+            },
             [&](const PhysicalLimit& n) {
                 children = {n.input.get()};
                 return "Limit[" + std::to_string(n.count) + "]";

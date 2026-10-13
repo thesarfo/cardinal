@@ -71,8 +71,20 @@ struct LogicalJoin {
     BoundExprPtr condition;  // null for Cross
 };
 
+// Groups the input rows by the keys and totals each group. Its rows hold the keys' output
+// columns and then the totals' output columns, in that order. With no keys the whole input
+// is one group, and one row comes out even when the input is empty. NULL is a group of its
+// own, and two keys are the same group if they compare equal (1 and 1.0 are).
+struct LogicalAggregate {
+    PlanPtr input;
+    std::vector<GroupKey> keys;
+    std::vector<AggregateItem> aggregates;
+};
+
 struct LogicalPlan {
-    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit, LogicalJoin, LogicalPrune> node;
+    std::variant<LogicalScan, LogicalEmpty, LogicalFilter, LogicalProject, LogicalSort, LogicalLimit, LogicalJoin, LogicalPrune,
+                 LogicalAggregate>
+        node;
 };
 
 }  // namespace cardinal

@@ -55,8 +55,23 @@ struct PhysicalLimit {
     std::int64_t count;
 };
 
+// The groups are found through a lookup table (see exec/aggregate.h). The keys and the
+// totals' arguments read the input's rows by position. The output rows are the key values
+// then the totals, in that order, and groups come out in the order they first appeared.
+struct PhysicalAggregateCall {
+    AggFunc func;
+    BoundExprPtr arg;  // null for CountStar
+};
+struct PhysicalHashAggregate {
+    PhysicalPtr input;
+    std::vector<BoundExprPtr> keys;
+    std::vector<PhysicalAggregateCall> aggregates;
+};
+
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin> node;
+    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin,
+                 PhysicalHashAggregate>
+        node;
 };
 
 }  // namespace cardinal

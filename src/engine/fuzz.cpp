@@ -42,6 +42,12 @@ std::vector<std::string> clauses(const QuerySpec& q) {
                            : ", " + j.table + " AS " + j.alias);
     }
     if (q.where) out.push_back("WHERE " + render(*q.where));
+    if (!q.group_by.empty()) {
+        std::string group = "GROUP BY ";
+        for (std::size_t i = 0; i < q.group_by.size(); ++i) group += (i ? ", " : "") + q.group_by[i];
+        out.push_back(group);
+    }
+    if (q.having) out.push_back("HAVING " + render(*q.having));
     if (!q.order_by.empty()) {
         std::string order = "ORDER BY ";
         for (std::size_t i = 0; i < q.order_by.size(); ++i)
@@ -69,7 +75,9 @@ BoolExpr node(BoolExpr::Kind kind, std::vector<BoolExpr> kids) {
 
 class Generator {
 public:
-    explicit Generator(uint64_t seed) : rng_(seed) {}
+    // Whether a query is an aggregate one, and what it totals, is drawn from a second stream,
+    // so adding it left every other query of an existing seed exactly as it was.
+    explicit Generator(uint64_t seed) : rng_(seed), agg_rng_(seed ^ 0xa5a5a5a5deadbeefULL) {}
 
     QuerySpec query() {
         QuerySpec q;
@@ -97,10 +105,68 @@ public:
             for (int i = 0; i < keys; ++i) q.order_by.push_back({chance(25) ? numeric(1) : sortable_column(), chance(40)});
         }
         if (chance(25)) q.limit = 1 + pick(5);
+        if (apick(100) < 15) aggregate(q);
         return q;
     }
 
 private:
+    int apick(int n) { return static_cast<int>(agg_rng_() % static_cast<uint64_t>(n)); }
+    std::string aone_of(std::initializer_list<const char*> items) {
+        return *(items.begin() + apick(static_cast<int>(items.size())));
+    }
+    std::string acolumn(std::initializer_list<const char*> names) {
+        return aliases_[static_cast<std::size_t>(apick(static_cast<int>(aliases_.size())))] + "." + aone_of(names);
+    }
+
+    // Turns the query into a grouped one: some group keys, some totals, maybe HAVING. The
+    // totals only read numbers that add up exactly (whole numbers and halves), so the answer
+    // does not depend on the order rows arrive in.
+    void aggregate(QuerySpec& q) {
+        q.select.clear();
+        q.order_by.clear();
+        int keys = apick(100) < 25 ? 0 : 1 + apick(2);
+        for (int i = 0; i < keys; ++i) {
+            std::string key = apick(100) < 20 ? "(" + acolumn({"id", "a", "b"}) + " + 1)" : acolumn({"id", "a", "b", "c", "s", "f"});
+            q.group_by.push_back(key);
+            q.select.push_back(key);
+        }
+        auto number = [&] {
+            switch (apick(4)) {
+                case 0: return acolumn({"id", "a", "b"});
+                case 1: return acolumn({"c"});
+                case 2: return "(" + acolumn({"a", "b"}) + " + " + acolumn({"id", "a"}) + ")";
+                default: return acolumn({"id", "a", "b", "c"});
+            }
+        };
+        auto total = [&] {
+            switch (apick(7)) {
+                case 0: return std::string("COUNT(*)");
+                case 1: return "COUNT(" + acolumn({"id", "a", "b", "c", "s", "f"}) + ")";
+                case 2: return "SUM(" + number() + ")";
+                case 3: return "AVG(" + number() + ")";
+                case 4: return "MIN(" + acolumn({"id", "a", "b", "c", "s"}) + ")";
+                case 5: return "MAX(" + acolumn({"id", "a", "b", "c", "s"}) + ")";
+                default: return "SUM(" + number() + ") + COUNT(*)";
+            }
+        };
+        int totals = 1 + apick(3);
+        for (int i = 0; i < totals; ++i) q.select.push_back(total());
+
+        if (apick(100) < 35) {
+            std::string test = aone_of({"COUNT(*) > 1", "COUNT(*) >= 2", "SUM(q1.a) > 2", "MIN(q1.id) IS NOT NULL", "MAX(q1.b) < 3"});
+            BoolExpr having = leaf(test);
+            if (!q.group_by.empty() && apick(100) < 30)
+                having = node(BoolExpr::Kind::And, {having, leaf(q.group_by[0] + " IS NOT NULL")});
+            q.having = having;
+        }
+        if (apick(100) < 35) {
+            int n = 1 + apick(static_cast<int>(q.select.size()));
+            for (int i = 0; i < n && i < static_cast<int>(q.select.size()); ++i)
+                q.order_by.push_back({q.select[static_cast<std::size_t>(i)], apick(100) < 40});
+        }
+        if (q.limit && q.order_by.empty()) q.limit.reset();  // which groups LIMIT keeps is not defined
+    }
+
     int pick(int n) { return static_cast<int>(rng_() % static_cast<uint64_t>(n)); }
     bool chance(int percent) { return pick(100) < percent; }
     std::string one_of(std::initializer_list<const char*> items) {
@@ -178,6 +244,7 @@ private:
     }
 
     std::mt19937_64 rng_;
+    std::mt19937_64 agg_rng_;
     std::vector<std::string> aliases_;
 };
 
@@ -267,6 +334,16 @@ std::vector<QuerySpec> simplifications(const QuerySpec& spec) {
         if (spec.order_by.size() > 1)
             for (std::size_t i = 0; i < spec.order_by.size(); ++i)
                 with([i](QuerySpec& q) { q.order_by.erase(q.order_by.begin() + static_cast<std::ptrdiff_t>(i)); });
+    }
+    if (spec.having) {
+        with([](QuerySpec& q) { q.having.reset(); });
+        for (BoolExpr& r : reductions(*spec.having)) with([&r](QuerySpec& q) { q.having = r; });
+    }
+    if (!spec.group_by.empty()) {
+        with([](QuerySpec& q) { q.group_by.clear(); });
+        if (spec.group_by.size() > 1)
+            for (std::size_t i = 0; i < spec.group_by.size(); ++i)
+                with([i](QuerySpec& q) { q.group_by.erase(q.group_by.begin() + static_cast<std::ptrdiff_t>(i)); });
     }
     if (spec.where) {
         with([](QuerySpec& q) { q.where.reset(); });

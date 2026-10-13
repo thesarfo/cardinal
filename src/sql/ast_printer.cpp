@@ -95,6 +95,9 @@ std::string print(const Expr& expr) {
                 return std::string(n.negated ? "(not-in " : "(in ") + print(*n.operand) +
                        join_exprs(n.items) + ")";
             },
+            [](const FunctionCall& n) {
+                return "(call " + lower(n.name) + " " + (n.star ? "*" : print(*n.arg)) + ")";
+            },
         },
         expr.node);
 }
@@ -120,6 +123,7 @@ std::string print(const Statement& statement) {
                     out += std::holds_alternative<Star>(item.item)
                                ? "(star)"
                                : print(*std::get<ExprPtr>(item.item));
+                    if (item.alias) out += " (as " + *item.alias + ")";
                 }
                 out += " (from " + table_text(n.from) + ")";
                 for (const JoinClause& join : n.joins) {
@@ -127,6 +131,8 @@ std::string print(const Statement& statement) {
                                    : " (cross-join " + table_text(join.table) + ")";
                 }
                 if (n.where) out += " (where " + print(*n.where) + ")";
+                if (!n.group_by.empty()) out += " (group-by" + join_exprs(n.group_by) + ")";
+                if (n.having) out += " (having " + print(*n.having) + ")";
                 if (!n.order_by.empty()) {
                     out += " (order-by";
                     for (const OrderKey& k : n.order_by)

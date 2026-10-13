@@ -13,6 +13,18 @@ struct Overloaded : Ts... {
 
 }  // namespace
 
+const char* agg_name(AggFunc func) {
+    switch (func) {
+        case AggFunc::CountStar:
+        case AggFunc::Count: return "count";
+        case AggFunc::Sum: return "sum";
+        case AggFunc::Avg: return "avg";
+        case AggFunc::Min: return "min";
+        case AggFunc::Max: return "max";
+    }
+    return "?";
+}
+
 std::set<ColumnId> columns_used(const BoundExpr& expr) {
     return std::visit(
         Overloaded{

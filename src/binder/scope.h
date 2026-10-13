@@ -28,6 +28,10 @@ public:
     // Gives every column of `info` a fresh id. Throws DbError if `alias` is taken.
     void add(std::string alias, const TableInfo& info);
 
+    // A column that no table has: the result of a total, or a computed group key. It gets the
+    // next id, after every table's, and an empty table name.
+    ColumnId add_computed(std::string name, Type type);
+
     // Finds a column by `name` or `table.name`. Throws DbError if it is unknown or,
     // for a bare name, matches more than one table.
     ColumnId resolve(const std::optional<std::string>& table, const std::string& name) const;

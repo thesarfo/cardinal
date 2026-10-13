@@ -16,6 +16,12 @@ void Scope::add(std::string alias, const TableInfo& info) {
     tables_.push_back(std::move(table));
 }
 
+ColumnId Scope::add_computed(std::string name, Type type) {
+    ColumnId id{static_cast<std::uint32_t>(columns_.size())};
+    columns_.push_back({"", std::move(name), type});
+    return id;
+}
+
 Scope Scope::prefix(std::size_t count) const {
     Scope out;
     out.tables_.assign(tables_.begin(), tables_.begin() + static_cast<std::ptrdiff_t>(count));

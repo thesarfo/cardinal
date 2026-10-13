@@ -39,3 +39,6 @@
 06_arithmetic.test | SELECT x / 0 FROM t | Same, for a DOUBLE.
 06_arithmetic.test | SELECT a + b FROM t | SQLite switches to floating point when a whole number overflows (9223372036854775807 + 1 gives 9.22337203685478e+18); cardinal raises an integer overflow error.
 06_arithmetic.test | SELECT a * 2 FROM t | Same, for multiplication.
+13_aggregates.test | SELECT user_id, amount FROM o GROUP BY user_id | SQLite allows a column that is neither grouped nor totalled and picks one row's value; cardinal makes it an error, as the SQL standard does
+13_aggregates.test | SELECT SUM(status) FROM o | SQLite sums text by reading it as a number (0 for 'paid'); cardinal checks that SUM gets numbers
+13_aggregates.test | SELECT COUNT(*) FROM o HAVING 1 | SQLite takes any value as true in HAVING; cardinal wants a true/false value, as it does in WHERE

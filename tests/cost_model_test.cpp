@@ -136,6 +136,7 @@ TEST_CASE("a model can be swapped through the interface") {
         Cost sort(double) const override { return {1}; }
         Cost nested_loop_join(double, double, double) const override { return {5}; }
         Cost hash_join(double, double, double) const override { return {3}; }
+        Cost hash_aggregate(double, double) const override { return {1}; }
     };
     std::unique_ptr<CostModel> model = std::make_unique<Flat>();
     REQUIRE(model->hash_join(1e9, 1e9, 1e9) < model->nested_loop_join(1, 1, 1));

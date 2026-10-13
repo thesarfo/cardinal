@@ -22,6 +22,10 @@ PlanPtr plan_select(const BoundSelect& select) {
         plan = make(LogicalJoin{plan, scan(tables[i + 1]), condition ? JoinType::Inner : JoinType::Cross, condition});
     }
     if (select.where) plan = make(LogicalFilter{plan, select.where});
+    if (select.aggregated) {
+        plan = make(LogicalAggregate{plan, select.group_by, select.aggregates});
+        if (select.having) plan = make(LogicalFilter{plan, select.having});
+    }
 
     if (!select.order_by.empty()) {
         std::vector<SortKey> keys;

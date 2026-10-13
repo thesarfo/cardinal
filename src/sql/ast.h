@@ -49,8 +49,16 @@ struct InList {
     bool negated;
 };
 
+// COUNT(*), SUM(x), and so on. `name` is as written; the binder checks it. `arg` is null
+// for COUNT(*), which is the only call that takes a star.
+struct FunctionCall {
+    std::string name;
+    ExprPtr arg;
+    bool star = false;
+};
+
 struct Expr {
-    std::variant<Literal, ColumnRef, Unary, Binary, IsNull, Between, InList> node;
+    std::variant<Literal, ColumnRef, Unary, Binary, IsNull, Between, InList, FunctionCall> node;
 };
 
 // Builders, so tests and the parser don't spell out the nesting.
@@ -86,6 +94,7 @@ struct Insert {
 struct Star {};
 struct SelectItem {
     std::variant<Star, ExprPtr> item;
+    std::optional<std::string> alias = std::nullopt;  // `expr AS alias`: what the column is called
 };
 struct OrderKey {
     ExprPtr expr;
@@ -107,6 +116,8 @@ struct Select {
     TableRef from;
     std::vector<JoinClause> joins;
     ExprPtr where;  // null when there is no WHERE
+    std::vector<ExprPtr> group_by;
+    ExprPtr having;  // null when there is no HAVING
     std::vector<OrderKey> order_by;
     std::optional<std::int64_t> limit;
 };
