@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <compare>
 
 namespace cardinal {
@@ -63,6 +64,11 @@ public:
     virtual Cost hash_aggregate(double input_rows, double groups) const = 0;
     // Sorts the input by the group key, then passes over it once comparing neighbours.
     virtual Cost sort_aggregate(double input_rows, double groups) const = 0;
+    // The same when the input already arrives sorted by the group key, so there is nothing to
+    // sort: the pass over the groups is all that is left.
+    virtual Cost sort_aggregate_presorted(double input_rows, double groups) const {
+        return {std::max(0.0, sort_aggregate(input_rows, groups).total - sort(input_rows).total)};
+    }
 };
 
 // The formulas in docs/cost-model.md.

@@ -306,3 +306,30 @@ TEST_CASE("merge join chains: the output of one merge feeds the next without a s
     const char* sql = "SELECT a.id FROM a, b, c WHERE a.k = b.k AND b.k = c.k AND a.k < 30 AND b.k < 30 AND c.k < 30";
     REQUIRE(check_query(db, sql).ok);
 }
+
+TEST_CASE("a sort aggregate pays off when its input arrives in group key order") {
+    Database db = indexed_big(10000, 10000);
+    const char* sql = "SELECT k, COUNT(*) FROM a WHERE k < 2000 GROUP BY k";
+    std::string plan = chosen_plan(db, sql);
+    INFO(plan);
+    REQUIRE(plan.find("SortAggregate[") != std::string::npos);
+    REQUIRE(plan.find("input already sorted") != std::string::npos);
+    REQUIRE(plan.find("IndexScan[a using a_k") != std::string::npos);
+    std::string all = format_result(db.execute(std::string("EXPLAIN VERBOSE ") + sql));
+    REQUIRE(all.find("SortAggregate (input in order)") != std::string::npos);
+
+    // without an index to deliver the order, hashing wins as it always did
+    REQUIRE(chosen_plan(db, "SELECT id, COUNT(*) FROM a WHERE id < 2000 GROUP BY id").find("HashAggregate[") != std::string::npos);
+}
+
+TEST_CASE("GROUP BY k ORDER BY k needs no sort step when the aggregate delivers the order") {
+    Database db = indexed_big(10000, 10000);
+    std::string plan = chosen_plan(db, "SELECT k, COUNT(*) FROM a WHERE k < 2000 GROUP BY k ORDER BY k");
+    INFO(plan);
+    REQUIRE(plan.find("SortAggregate[") != std::string::npos);
+    REQUIRE(plan.find("Sort[") == std::string::npos);
+
+    Database small = indexed_big(60, 6);
+    REQUIRE(check_query(small, "SELECT k, COUNT(*), SUM(id) FROM a WHERE k < 4 GROUP BY k ORDER BY k").ok);
+    REQUIRE(check_query(small, "SELECT k, COUNT(*) FROM a WHERE k < 4 GROUP BY k HAVING COUNT(*) > 3").ok);
+}

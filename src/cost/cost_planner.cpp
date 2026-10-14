@@ -134,6 +134,7 @@ private:
     std::unordered_map<const LogicalJoin*, MergeVariant> merge_;
     std::unordered_map<const LogicalFilter*, IndexFit> index_fit_;
     std::unordered_map<const LogicalSort*, bool> sort_skipped_;
+    std::unordered_map<const LogicalAggregate*, bool> sort_aggregate_presorted_;
 
     static std::optional<ColumnId> plain_column(const BoundExprPtr& expr) {
         if (const auto* c = std::get_if<BoundColumn>(&expr->node)) return c->id;
@@ -176,7 +177,16 @@ private:
                     settle(n.input, sort_skipped_[&n] ? key : std::nullopt);
                 },
                 [&](const LogicalProject& n) { settle(n.input, std::nullopt); },
-                [&](const LogicalAggregate& n) { settle(n.input, std::nullopt); },
+                [&](const LogicalAggregate& n) {
+                    // A parent that wants the groups in key order needs the sort aggregate.
+                    if (want) {
+                        aggregate_choices[&n] = AggregateMethod::Sort;
+                        mark_chosen(node.get(), "SortAggregate");
+                    }
+                    bool sorted_run = aggregate_choices[&n] == AggregateMethod::Sort && sort_aggregate_presorted_[&n];
+                    std::optional<ColumnId> key = n.keys.size() == 1 ? plain_column(n.keys[0].expr) : std::nullopt;
+                    settle(n.input, sorted_run ? key : std::nullopt);
+                },
                 [&](const LogicalJoin& n) {
                     auto variant = merge_.find(&n);
                     bool merge = want.has_value() || choices[&n].method == JoinMethod::Merge;
@@ -285,9 +295,28 @@ private:
         std::vector<PlanOption> options;
         options.push_back({"HashAggregate", input + model_.hash_aggregate(in, groups)});
         options.push_back({"SortAggregate", input + model_.sort_aggregate(in, groups)});
+
+        // With one plain-column key and an input that can arrive sorted by it, the sort is free.
+        std::optional<ColumnId> key;
+        if (aggregate.keys.size() == 1) key = plain_column(aggregate.keys[0].expr);
+        bool presorted = false;
+        if (key) {
+            auto have = ordered_[aggregate.input.get()].find(key->value);
+            if (have != ordered_[aggregate.input.get()].end()) {
+                Cost cost = have->second + model_.sort_aggregate_presorted(in, groups);
+                if (cost < options[1].cost) {
+                    options[1].cost = cost;
+                    options[1].name = "SortAggregate (input in order)";
+                    presorted = true;
+                }
+            }
+        }
         std::size_t best = options[1].cost < options[0].cost ? 1 : 0;
         options[best].chosen = true;
         aggregate_choices[&aggregate] = best == 0 ? AggregateMethod::Hash : AggregateMethod::Sort;
+        sort_aggregate_presorted_[&aggregate] = presorted;
+        // Groups come out of a sort aggregate in key order, which a parent may want.
+        if (key) ordered_[node.get()][aggregate.keys[0].output.value] = options[1].cost;
         Cost cost = options[best].cost;
         trace.push_back({node.get(), std::move(options)});
         return cost;
