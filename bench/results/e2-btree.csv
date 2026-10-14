@@ -1,0 +1,30 @@
+# experiment: e2, index scan against full scan as the share of matching rows grows
+# data: table e2 (id INT, v INT, pad TEXT) with 100000 rows, v a permutation of 0..99999 spread through the table,
+#       index on v, analyzed
+# query: SELECT id FROM e2 WHERE v < K, K = share * rows
+# scan: indexes off. index: index scan forced. planner: the cost-based choice with indexes on
+# est_scan, est_index: what the cost model says each way costs, from the estimated row count
+# runs: 1 warm-up, then 9 timed; exec_ms is the median
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# cpu: Intel(R) Core(TM) i7-14700HX
+# commit: acfe72e
+experiment,share_pct,rows_matching,est_rows,est_scan,est_index,planner_picks,scan_ms,index_ms,planner_ms,faster,commit
+e2,0.01,10,10,3000.1000,0.9664,index,13.8346,0.0026,0.0027,index,acfe72e
+e2,0.05,50,50,3000.5002,4.1674,index,21.0345,0.0211,0.0209,index,acfe72e
+e2,0.1,100,100,3001.0003,8.1687,index,22.4046,0.0424,0.0420,index,acfe72e
+e2,0.5,500,500,3005.0016,40.1789,index,22.2663,0.1193,0.1178,index,acfe72e
+e2,1,1000,1000,3010.0032,80.1917,index,13.0710,0.2401,0.2393,index,acfe72e
+e2,2,2000,2001,3020.0064,160.2173,index,13.8267,0.5298,0.5262,index,acfe72e
+e2,5,5000,5001,3050.0100,400.2461,index,14.6382,1.7608,1.7453,index,acfe72e
+e2,10,10000,10001,3100.0100,800.2461,index,16.0007,4.0858,4.5273,index,acfe72e
+e2,15,15000,15001,3150.0100,1200.2461,index,16.8957,5.4023,5.4244,index,acfe72e
+e2,20,20000,20001,3200.0100,1600.2461,index,17.3034,7.3042,6.8677,index,acfe72e
+e2,25,25000,25001,3250.0100,2000.2461,index,24.6871,13.7352,13.0463,index,acfe72e
+e2,30,30000,30001,3300.0100,2400.2461,index,20.1337,11.5984,10.1931,index,acfe72e
+e2,40,40000,40001,3400.0100,3200.2461,index,19.2174,20.7192,15.0218,scan,acfe72e
+e2,50,50000,50001,3500.0100,4000.2461,scan,22.5388,24.4787,21.3628,scan,acfe72e
+e2,60,60000,60001,3600.0100,4800.2461,scan,22.9174,28.4536,24.6713,scan,acfe72e
+e2,70,70000,70001,3700.0100,5600.2461,scan,25.1746,44.1199,44.1298,scan,acfe72e
+e2,80,80000,80001,3800.0100,6400.2461,scan,42.3481,48.3924,41.0647,scan,acfe72e
+e2,90,90000,90001,3900.0100,7200.2461,scan,27.9219,49.0806,49.0016,scan,acfe72e

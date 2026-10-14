@@ -1,22 +1,19 @@
 #pragma once
 
 #include <cstddef>
-#include <map>
 #include <optional>
 #include <vector>
 
 #include "common/value.h"
+#include "index/bound.h"
+#include "index/bplus_tree.h"
 
 namespace cardinal {
 
-// One end of a range. No value means the range is open on that side.
-struct Bound {
-    Value value;
-    bool inclusive = true;
-};
-
-// Maps one column's values to the positions of the rows that hold them, in key order.
-// NULL is never stored: no comparison finds it, so an index scan never needs it.
+// Maps one column's values to the positions of the rows that hold them, in key order. This is
+// what a table keeps per index and what an index scan reads; the structure behind it is a
+// B+ tree (it was a std::multimap until task 9.7). NULL is never stored: no comparison finds
+// it, so an index scan never needs it.
 class OrderedIndex {
 public:
     // Ignores a NULL key.
@@ -28,13 +25,14 @@ public:
     // Row ids with a key between `lo` and `hi`, in key order (ties in insertion order).
     std::vector<std::size_t> range(const std::optional<Bound>& lo, const std::optional<Bound>& hi) const;
 
-    std::size_t size() const { return entries_.size(); }
+    // Removes one entry. False if the table never had it.
+    bool erase(const Value& key, std::size_t row_id) { return tree_.erase(key, row_id); }
+
+    std::size_t size() const { return tree_.size(); }
+    const BPlusTree& tree() const { return tree_; }
 
 private:
-    struct Less {
-        bool operator()(const Value& a, const Value& b) const;
-    };
-    std::multimap<Value, std::size_t, Less> entries_;
+    BPlusTree tree_;
 };
 
 }  // namespace cardinal

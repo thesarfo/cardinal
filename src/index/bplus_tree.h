@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "common/value.h"
-#include "index/ordered_index.h"
+#include "index/bound.h"
 
 namespace cardinal {
 
