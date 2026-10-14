@@ -30,6 +30,9 @@ struct CostParams {
     // The tables here live in memory and have no pages. Pretending they do keeps the
     // formulas in the usual shape; this is how many rows fit on a pretend page.
     double rows_per_page = 100;
+    // Fetching one row found through an index: handling it, plus the jump to wherever it
+    // lives instead of the next row along. A guess to be fitted by experiment E2 (task 9.4).
+    double index_row_cost = 0.1;
 };
 
 // What each step costs. Every function returns the cost of that step ALONE, not counting the
@@ -44,6 +47,9 @@ public:
     virtual Cost scan(double rows) const = 0;
     // `conditions` is how many conditions are checked on each row (the parts of an AND).
     virtual Cost filter(double input_rows, int conditions) const = 0;
+    // Finds `matching_rows` of a table of `table_rows` through an index: one descent to the
+    // first match, then each match fetched. Conditions the index does not answer are a filter above.
+    virtual Cost index_scan(double table_rows, double matching_rows) const = 0;
     virtual Cost project(double rows) const = 0;
     virtual Cost sort(double rows) const = 0;
     // Tests every left row against every right row. The right input is read once and kept.
@@ -63,6 +69,7 @@ public:
 
     Cost scan(double rows) const override;
     Cost filter(double input_rows, int conditions) const override;
+    Cost index_scan(double table_rows, double matching_rows) const override;
     Cost project(double rows) const override;
     Cost sort(double rows) const override;
     Cost nested_loop_join(double left_rows, double right_rows, double output_rows) const override;

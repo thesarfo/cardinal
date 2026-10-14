@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "optimizer/conjuncts.h"
+#include "physical/index_match.h"
 #include "physical/join_keys.h"
 
 
@@ -60,83 +61,16 @@ struct Planned {
     Layout layout;  // empty after a Project: its rows hold values, not columns
 };
 
-// `column op constant`, or `constant op column` turned around, where op is a comparison.
-struct Comparison {
-    ColumnId column;
-    BinaryOp op;
-    Value value;
-};
-
-std::optional<Comparison> as_comparison(const BoundExprPtr& expr) {
-    const auto* b = std::get_if<BoundBinary>(&expr->node);
-    if (!b) return std::nullopt;
-    BinaryOp flipped;
-    switch (b->op) {
-        case BinaryOp::Eq: flipped = BinaryOp::Eq; break;
-        case BinaryOp::Lt: flipped = BinaryOp::Gt; break;
-        case BinaryOp::Le: flipped = BinaryOp::Ge; break;
-        case BinaryOp::Gt: flipped = BinaryOp::Lt; break;
-        case BinaryOp::Ge: flipped = BinaryOp::Le; break;
-        default: return std::nullopt;
-    }
-    const auto* lc = std::get_if<BoundColumn>(&b->left->node);
-    const auto* rl = std::get_if<BoundLiteral>(&b->right->node);
-    if (lc && rl && !rl->value.is_null()) return Comparison{lc->id, b->op, rl->value};
-    const auto* ll = std::get_if<BoundLiteral>(&b->left->node);
-    const auto* rc = std::get_if<BoundColumn>(&b->right->node);
-    if (ll && rc && !ll->value.is_null()) return Comparison{rc->id, flipped, ll->value};
-    return std::nullopt;
-}
-
-// A Filter over a Scan, read through an index. Uses the first indexed column the filter
-// compares with a constant, takes an equality, or else one lower and one upper bound, and
-// leaves every other condition in a filter above.
+// A Filter over a Scan, read through an index, if the planner is allowed to and one fits.
 std::optional<Planned> plan_index_scan(const LogicalFilter& filter, const PlannerOptions& options) {
     if (!options.use_indexes || !options.catalog) return std::nullopt;
-    const auto* scan = std::get_if<LogicalScan>(&filter.input->node);
-    if (!scan) return std::nullopt;
-    const Table* table = options.catalog->get_table(scan->table);
-    if (!table || table->indexes().empty()) return std::nullopt;
-
-    std::vector<BoundExprPtr> conjuncts = split_ands(filter.predicate);
-    for (const BoundExprPtr& first : conjuncts) {
-        std::optional<Comparison> head = as_comparison(first);
-        if (!head) continue;
-        auto at = std::find(scan->columns.begin(), scan->columns.end(), head->column);
-        if (at == scan->columns.end()) continue;
-        const std::string& column = table->info().columns[static_cast<std::size_t>(at - scan->columns.begin())].name;
-        const Table::IndexEntry* entry = table->index_on(column);
-        if (!entry) continue;
-        std::string index_name;
-        for (const auto& [name, e] : table->indexes())
-            if (&e == entry) index_name = name;
-
-        PhysicalIndexScan node{scan->table, index_name, column, std::nullopt, std::nullopt};
-        std::vector<BoundExprPtr> rest;
-        bool exact = false;
-        for (const BoundExprPtr& conjunct : conjuncts) {
-            std::optional<Comparison> c = as_comparison(conjunct);
-            bool used = false;
-            if (c && c->column == head->column && !exact) {
-                if (c->op == BinaryOp::Eq && !node.lo && !node.hi) {
-                    node.lo = Bound{c->value, true};
-                    node.hi = Bound{c->value, true};
-                    exact = used = true;
-                } else if ((c->op == BinaryOp::Gt || c->op == BinaryOp::Ge) && !node.lo) {
-                    node.lo = Bound{c->value, c->op == BinaryOp::Ge};
-                    used = true;
-                } else if ((c->op == BinaryOp::Lt || c->op == BinaryOp::Le) && !node.hi) {
-                    node.hi = Bound{c->value, c->op == BinaryOp::Le};
-                    used = true;
-                }
-            }
-            if (!used) rest.push_back(conjunct);
-        }
-        PhysicalPtr plan = make(std::move(node));
-        if (!rest.empty()) plan = make(PhysicalFilter{plan, to_positions(and_all(rest), scan->columns)});
-        return Planned{plan, scan->columns};
-    }
-    return std::nullopt;
+    if (options.choose_index && !options.choose_index(filter)) return std::nullopt;
+    std::optional<IndexMatch> match = match_index(filter, *options.catalog);
+    if (!match) return std::nullopt;
+    const auto& scan = std::get<LogicalScan>(filter.input->node);
+    PhysicalPtr plan = make(PhysicalIndexScan{scan.table, match->index, match->column, match->lo, match->hi});
+    if (!match->rest.empty()) plan = make(PhysicalFilter{plan, to_positions(and_all(match->rest), scan.columns)});
+    return Planned{plan, scan.columns};
 }
 
 Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {

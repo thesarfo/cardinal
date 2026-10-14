@@ -43,6 +43,9 @@ struct PlannerOptions {
     // answers are dropped from the filter.
     const Catalog* catalog = nullptr;
     bool use_indexes = false;
+    // If set, asked about every such filter, and the index is used only when it says yes. This is
+    // how the planner that prices both ways (cost/cost_planner.h) picks per scan.
+    std::function<bool(const LogicalFilter&)> choose_index;
 
     AggregateMethod aggregate_method = AggregateMethod::Hash;
     // Same idea for the aggregates: asked about every one, and used instead of the setting above.

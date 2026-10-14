@@ -44,7 +44,9 @@ struct CostBasedPlan {
 // on the cost of its inputs only through their total, and the row counts do not depend on the
 // choice made.
 //
-// With a catalog, a Filter over a Scan reads through an index where one fits (not yet priced).
+// With a catalog, a Filter over a Scan is also priced reading through an index where one fits,
+// and the cheaper way is used. The index scan finds the rows the indexed conditions let
+// through, so it wins when those are few.
 CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model,
                            const Catalog* indexes = nullptr);
 

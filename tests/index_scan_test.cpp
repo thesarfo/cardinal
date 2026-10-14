@@ -4,6 +4,7 @@
 
 #include "common/error.h"
 #include "engine/answer_checker.h"
+#include "cost/cost_model.h"
 #include "engine/database.h"
 #include "engine/result_format.h"
 #include "sql/ast_printer.h"
@@ -102,5 +103,60 @@ TEST_CASE("index scan: a join over an indexed filter gives the same answer as wi
         INFO(sql);
         CheckOutcome outcome = check_query(db, sql);
         REQUIRE(outcome.ok);
+    }
+}
+
+namespace {
+
+// 10,000 rows, v spread evenly over 0..999, analyzed so the guesses are close.
+Database big_db() {
+    Database db;
+    db.execute("CREATE TABLE big (id INT, v INT, pad TEXT)");
+    std::string insert = "INSERT INTO big VALUES ";
+    for (int i = 0; i < 10000; ++i)
+        insert += std::string(i ? ", " : "") + "(" + std::to_string(i) + ", " + std::to_string(i % 1000) + ", 'x')";
+    db.execute(insert);
+    db.execute("CREATE INDEX big_v ON big (v)");
+    db.execute("ANALYZE big");
+    return db;
+}
+
+bool uses_index(Database& db, const std::string& sql) {
+    std::string text = plan(db, sql);
+    return text.substr(text.find("Chosen plan")).find("IndexScan") != std::string::npos;
+}
+
+}  // namespace
+
+TEST_CASE("index scan priced: the plan flips from the index to a full scan as more rows match") {
+    Database db = big_db();
+    REQUIRE(uses_index(db, "SELECT id FROM big WHERE v = 7"));      // 0.1% of the rows
+    REQUIRE(uses_index(db, "SELECT id FROM big WHERE v < 100"));    // 10%
+    REQUIRE_FALSE(uses_index(db, "SELECT id FROM big WHERE v < 600"));  // 60%
+}
+
+TEST_CASE("index scan priced: both ways are listed and the loser says so") {
+    Database db = big_db();
+    std::string text = plan(db, "SELECT id FROM big WHERE v < 600");
+    REQUIRE(text.find("IndexScan[big_v]") != std::string::npos);
+    REQUIRE(text.find("SeqScan[big]") != std::string::npos);
+    REQUIRE(text.find("Chosen plan") != std::string::npos);
+}
+
+TEST_CASE("index scan priced: the index scan's cost rises with the rows it finds") {
+    DefaultCostModel model;
+    double last = -1;
+    for (double found : {1.0, 10.0, 1000.0, 6000.0}) {
+        double cost = model.index_scan(10000, found).total;
+        REQUIRE(cost > last);
+        last = cost;
+    }
+}
+
+TEST_CASE("index scan priced: a forced plan and a cost-based plan give the same rows") {
+    Database db = big_db();
+    for (const char* sql : {"SELECT COUNT(*) FROM big WHERE v < 600", "SELECT id FROM big WHERE v = 7 ORDER BY id"}) {
+        INFO(sql);
+        REQUIRE(check_query(db, sql).ok);
     }
 }

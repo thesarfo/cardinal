@@ -5,6 +5,7 @@
 
 #include "logical/plan_util.h"
 #include "optimizer/conjuncts.h"
+#include "physical/index_match.h"
 #include "physical/join_keys.h"
 
 namespace cardinal {
@@ -39,7 +40,8 @@ JoinOptions join_options(bool hashable, double left, double right, double out, c
 
 class Pricer {
 public:
-    Pricer(CardinalityEstimator& estimator, const CostModel& model) : estimator_(estimator), model_(model) {}
+    Pricer(CardinalityEstimator& estimator, const CostModel& model, const Catalog* indexes)
+        : estimator_(estimator), model_(model), indexes_(indexes) {}
 
     Cost price(const PlanPtr& node) {
         return std::visit(
@@ -53,11 +55,7 @@ public:
                     record(node, {{"Empty", Cost{}}});
                     return Cost{};
                 },
-                [&](const LogicalFilter& n) {
-                    Cost cost = price(n.input) + model_.filter(estimator_.rows(n.input), static_cast<int>(split_ands(n.predicate).size()));
-                    record(node, {{"Filter", cost}});
-                    return cost;
-                },
+                [&](const LogicalFilter& n) { return price_filter(node, n); },
                 [&](const LogicalProject& n) {
                     Cost cost = price(n.input) + model_.project(estimator_.rows(n.input));
                     record(node, {{"Project", cost}});
@@ -86,12 +84,52 @@ public:
 
     std::unordered_map<const LogicalJoin*, JoinChoice> choices;
     std::unordered_map<const LogicalAggregate*, AggregateMethod> aggregate_choices;
+    std::unordered_map<const LogicalFilter*, bool> index_choices;
     PlanTrace trace;
 
 private:
     void record(const PlanPtr& node, std::vector<PlanOption> options) {
         if (options.size() == 1) options[0].chosen = true;
         trace.push_back({node.get(), std::move(options)});
+    }
+
+    // A filter, and when it sits directly on a scan with a usable index, also the same step read
+    // through the index. Both are costed as the whole step including the scan.
+    Cost price_filter(const PlanPtr& node, const LogicalFilter& filter) {
+        Cost input = price(filter.input);
+        double in = estimator_.rows(filter.input);
+        Cost scanned = input + model_.filter(in, static_cast<int>(split_ands(filter.predicate).size()));
+        std::optional<IndexMatch> match;
+        if (indexes_) match = match_index(filter, *indexes_);
+        if (!match) {
+            record(node, {{"Filter", scanned}});
+            return scanned;
+        }
+
+        // How many rows the index finds: what the answered conditions alone let through.
+        PlanPtr answered = std::make_shared<const LogicalPlan>(LogicalPlan{LogicalFilter{filter.input, and_all(match->answered)}});
+        double found = estimator_.rows(answered);
+        Cost through = model_.index_scan(in, found);
+        if (!match->rest.empty()) through += model_.filter(found, static_cast<int>(match->rest.size()));
+
+        std::vector<PlanOption> options;
+        options.push_back({"Filter", scanned});
+        options.push_back({"IndexScan[" + match->index + "]" + (match->rest.empty() ? "" : " + Filter"), through});
+        std::size_t best = options[1].cost < options[0].cost ? 1 : 0;
+        options[best].chosen = true;
+        index_choices[&filter] = best == 1;
+        if (best == 1) {
+            // The scan below is not run: the index scan reads the table instead.
+            for (StepOptions& step : trace)
+                if (step.step == filter.input.get())
+                    for (PlanOption& o : step.options) {
+                        o.chosen = false;
+                        o.note = "the index scan above reads the table instead";
+                    }
+        }
+        Cost cost = options[best].cost;
+        trace.push_back({node.get(), std::move(options)});
+        return cost;
     }
 
     Cost price_aggregate(const PlanPtr& node, const LogicalAggregate& aggregate) {
@@ -127,6 +165,7 @@ private:
 
     CardinalityEstimator& estimator_;
     const CostModel& model_;
+    const Catalog* indexes_;
 };
 
 }  // namespace
@@ -140,12 +179,16 @@ Cost join_step_cost(bool hashable, double left_rows, double right_rows, double o
 
 CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model,
                            const Catalog* indexes) {
-    Pricer pricer(estimator, model);
+    Pricer pricer(estimator, model, indexes);
     Cost total = pricer.price(logical);
 
     PlannerOptions options;
     options.catalog = indexes;
     options.use_indexes = indexes != nullptr;
+    options.choose_index = [&](const LogicalFilter& filter) {
+        auto it = pricer.index_choices.find(&filter);
+        return it != pricer.index_choices.end() && it->second;
+    };
     options.choose_join = [&](const LogicalJoin& join) {
         auto it = pricer.choices.find(&join);
         return it == pricer.choices.end() ? JoinChoice{} : it->second;

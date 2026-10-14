@@ -22,6 +22,12 @@ Cost DefaultCostModel::filter(double input_rows, int conditions) const {
     return {rows_or_zero(input_rows) * params_.per_check_cost * std::max(1, conditions)};
 }
 
+Cost DefaultCostModel::index_scan(double table_rows, double matching_rows) const {
+    // The descent compares about log2(n) keys. Each match is then a row handled and a jump.
+    double descent = std::log2(std::max(2.0, rows_or_zero(table_rows))) * params_.per_check_cost;
+    return {descent + rows_or_zero(matching_rows) * params_.index_row_cost};
+}
+
 Cost DefaultCostModel::project(double rows) const { return {rows_or_zero(rows) * params_.per_row_cost}; }
 
 Cost DefaultCostModel::sort(double rows) const {

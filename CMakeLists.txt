@@ -60,6 +60,7 @@ add_library(cardinal_core
   src/optimizer/having_pushdown.cpp
   src/optimizer/join_graph.cpp
   src/optimizer/rule_optimizer.cpp
+  src/physical/index_match.cpp
   src/physical/join_keys.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
