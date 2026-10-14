@@ -1,11 +1,14 @@
 #include <unistd.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
 #include "common/error.h"
 #include "common/version.h"
 #include "engine/database.h"
+#include "engine/datagen.h"
 #include "engine/result_format.h"
 #include "sql/parser.h"
 #include "stats/analyze.h"
@@ -49,6 +52,23 @@ int main() {
             if (line == ".bushy on" || line == ".bushy off") {
                 db.set_bushy_joins(line == ".bushy on");
                 std::cout << "bushy joins " << (db.bushy_joins() ? "on" : "off") << '\n';
+                continue;
+            }
+            // `.demo` or `.demo 5000`: the users and orders tables the experiments use, analyzed.
+            if (line == ".demo" || line.rfind(".demo ", 0) == 0) {
+                int users = 1000;
+                if (line.size() > 6) users = std::max(1, std::atoi(line.c_str() + 6));
+                if (db.catalog().get_table("users") || db.catalog().get_table("orders")) {
+                    std::cout << "the tables users and orders already exist\n";
+                    continue;
+                }
+                cardinal::generate_users_orders(db, {.users = users});
+                db.execute("ANALYZE users");
+                db.execute("ANALYZE orders");
+                std::cout << "users(id, name, country, age): " << users << " rows\n"
+                          << "orders(id, user_id, amount): " << users * 4 << " rows\n"
+                          << "both analyzed. Try: EXPLAIN ANALYZE VERBOSE SELECT u.name FROM users u JOIN orders o\n"
+                          << "ON u.id = o.user_id WHERE u.country = 'Ghana' AND o.amount > 100;\n";
                 continue;
             }
             if (line == ".indexes on" || line == ".indexes off") {
