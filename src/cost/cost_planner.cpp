@@ -32,6 +32,9 @@ JoinOptions join_options(bool hashable, double left, double right, double out, c
         joins.choices.push_back({JoinMethod::Hash, false});
         joins.options.push_back({"HashJoin (build left)", model.hash_join(left, right, out)});
         joins.choices.push_back({JoinMethod::Hash, true});
+        // Neither input is known to arrive in key order yet (task 10.2), so both are sorted.
+        joins.options.push_back({"MergeJoin (sorting both)", model.sort(left) + model.sort(right) + model.merge_join(left, right, out)});
+        joins.choices.push_back({JoinMethod::Merge, false});
     } else {
         joins.options[0].note = "no equality between the two inputs, so no hash join";
     }

@@ -95,6 +95,24 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                 Layout layout = left.layout;
                 layout.insert(layout.end(), right.layout.begin(), right.layout.end());
                 JoinChoice choice = options.choose_join ? options.choose_join(n) : JoinChoice{options.join_method, options.build_left};
+                if (choice.method == JoinMethod::Merge) {
+                    JoinKeys split = split_join_condition(n.condition, left.layout, right.layout);
+                    if (!split.keys.empty()) {
+                        std::vector<BoundExprPtr> left_keys, right_keys;
+                        std::vector<SortKey> left_order, right_order;
+                        for (const auto& [left_expr, right_expr] : split.keys) {
+                            left_keys.push_back(to_positions(left_expr, left.layout));
+                            right_keys.push_back(to_positions(right_expr, right.layout));
+                            left_order.push_back({left_keys.back(), false});
+                            right_order.push_back({right_keys.back(), false});
+                        }
+                        BoundExprPtr residual = split.residual.empty() ? nullptr : to_positions(and_all(split.residual), layout);
+                        PhysicalPtr sorted_left = make(PhysicalSort{left.plan, std::move(left_order)});
+                        PhysicalPtr sorted_right = make(PhysicalSort{right.plan, std::move(right_order)});
+                        return Planned{make(PhysicalMergeJoin{sorted_left, sorted_right, std::move(left_keys), std::move(right_keys), residual}),
+                                       layout};
+                    }
+                }
                 if (choice.method == JoinMethod::Hash) {
                     JoinKeys split = split_join_condition(n.condition, left.layout, right.layout);
                     if (!split.keys.empty()) {

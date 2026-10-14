@@ -122,10 +122,11 @@ TEST_CASE("planner: every option considered is in the trace, with exactly one wi
     }
 
     const StepOptions& join = join_options(p);
-    REQUIRE(join.options.size() == 3);
+    REQUIRE(join.options.size() == 4);
     REQUIRE(join.options[0].name == "NestedLoopJoin");
     REQUIRE(join.options[1].name == "HashJoin (build right)");
     REQUIRE(join.options[2].name == "HashJoin (build left)");
+    REQUIRE(join.options[3].name == "MergeJoin (sorting both)");
     // the winner is the cheapest of them
     for (const PlanOption& o : join.options) REQUIRE(chosen(join).cost <= o.cost);
 }
@@ -174,6 +175,7 @@ TEST_CASE("planner: a limit is not discounted, and a sort is priced on its input
 TEST_CASE("planner: it follows whatever cost model it is given") {
     struct AlwaysNestedLoop : DefaultCostModel {
         Cost hash_join(double, double, double) const override { return {1e18}; }
+        Cost merge_join(double, double, double) const override { return {1e18}; }
     };
     struct AlwaysHash : DefaultCostModel {
         Cost nested_loop_join(double, double, double) const override { return {1e18}; }
@@ -188,7 +190,9 @@ TEST_CASE("planner: it follows whatever cost model it is given") {
     dear_build.per_row_cost = 5.0;
     Database mid = sized(40, 120);
     REQUIRE(text(plan(mid, kJoin, DefaultCostModel())).find("HashJoin") != std::string::npos);
-    REQUIRE(text(plan(mid, kJoin, DefaultCostModel(dear_build))).find("NestedLoopJoin") != std::string::npos);
+    // Building a table is now dear, so hashing loses. A merge join sorts by comparing, which is
+    // not dear here, so it may take the join; either way the hash join is not used.
+    REQUIRE(text(plan(mid, kJoin, DefaultCostModel(dear_build))).find("HashJoin") == std::string::npos);
 }
 
 TEST_CASE("planner: a tie goes to the nested loop, then hash building from the right") {
@@ -202,6 +206,7 @@ TEST_CASE("planner: a tie goes to the nested loop, then hash building from the r
         Cost hash_aggregate(double, double) const override { return {1}; }
         Cost sort_aggregate(double, double) const override { return {1}; }
         Cost index_scan(double, double) const override { return {1}; }
+        Cost merge_join(double, double, double) const override { return {7}; }
     };
     Database db = sized(10, 10);
     REQUIRE(text(plan(db, kJoin, Flat())).find("NestedLoopJoin") != std::string::npos);

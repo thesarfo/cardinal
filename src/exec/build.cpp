@@ -9,6 +9,7 @@
 #include "exec/nested_loop_join.h"
 #include "exec/project.h"
 #include "exec/index_scan.h"
+#include "exec/merge_join.h"
 #include "exec/seq_scan.h"
 #include "exec/sort.h"
 
@@ -46,6 +47,10 @@ std::unique_ptr<Operator> build_operator(const PhysicalPlan& plan, const Catalog
             [&](const PhysicalHashJoin& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<HashJoin>(build_operator(*n.left, catalog), build_operator(*n.right, catalog),
                                                   n.left_keys, n.right_keys, n.residual, n.build_left);
+            },
+            [&](const PhysicalMergeJoin& n) -> std::unique_ptr<Operator> {
+                return std::make_unique<MergeJoin>(build_operator(*n.left, catalog), build_operator(*n.right, catalog),
+                                                   n.left_keys, n.right_keys, n.residual);
             },
             [&](const PhysicalFilter& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<Filter>(build_operator(*n.input, catalog), n.predicate);

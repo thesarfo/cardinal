@@ -90,6 +90,7 @@ QueryResult analyze(Catalog& catalog, const Analyze& stmt) {
 
 std::string describe_forced(const PlannerOptions& options) {
     if (options.join_method == JoinMethod::NestedLoop) return "nested loop joins";
+    if (options.join_method == JoinMethod::Merge) return "merge joins, sorting both inputs";
     return std::string("hash joins, building from the ") + (options.build_left ? "left" : "right") + " input";
 }
 

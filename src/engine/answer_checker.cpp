@@ -176,6 +176,13 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
         }
     }
 
+    // Joins run by merging two sorted inputs, with and without the rules.
+    for (bool optimize : {false, true}) {
+        Observation merged = run(optimize, {}, PlannerOptions{JoinMethod::Merge});
+        if (!(merged == reference))
+            wrong.push_back({std::string("merge joins (optimizer ") + (optimize ? "on" : "off") + ")", merged});
+    }
+
     // Groups found by sorting, from either side of the rules.
     for (bool optimize : {false, true}) {
         PlannerOptions sorted{JoinMethod::NestedLoop};

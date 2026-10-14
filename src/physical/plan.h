@@ -56,6 +56,14 @@ struct PhysicalHashJoin {
     BoundExprPtr residual;  // null if the keys are the whole condition
     bool build_left;
 };
+// An equality join over two inputs that arrive sorted ascending by their keys (see
+// exec/merge_join.h). Same field meanings as PhysicalHashJoin. The planner puts a Sort under
+// each input that does not already arrive in key order.
+struct PhysicalMergeJoin {
+    PhysicalPtr left, right;
+    std::vector<BoundExprPtr> left_keys, right_keys;
+    BoundExprPtr residual;
+};
 struct PhysicalSort {
     PhysicalPtr input;
     std::vector<SortKey> keys;
@@ -87,7 +95,7 @@ struct PhysicalSortAggregate {
 };
 
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalIndexScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin,
+    std::variant<PhysicalSeqScan, PhysicalIndexScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin, PhysicalMergeJoin,
                  PhysicalHashAggregate, PhysicalSortAggregate>
         node;
 };

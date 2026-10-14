@@ -42,6 +42,13 @@ Cost DefaultCostModel::nested_loop_join(double left_rows, double right_rows, dou
             rows_or_zero(output_rows) * params_.per_row_cost};
 }
 
+Cost DefaultCostModel::merge_join(double left_rows, double right_rows, double output_rows) const {
+    // Each input row is compared once with its neighbour's key (a check); each row that
+    // passes is built and passed on (a row).
+    return {(rows_or_zero(left_rows) + rows_or_zero(right_rows)) * params_.per_check_cost +
+            rows_or_zero(output_rows) * params_.per_row_cost};
+}
+
 Cost DefaultCostModel::hash_join(double build_rows, double probe_rows, double output_rows) const {
     // Building: hash the key (a check) and store the row (a row) for each build row.
     // Probing: hash the key and look it up (a check) for each probe row.

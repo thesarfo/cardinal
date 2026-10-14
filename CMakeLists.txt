@@ -55,6 +55,7 @@ add_library(cardinal_core
   src/index/bplus_tree.cpp
   src/index/ordered_index.cpp
   src/exec/index_scan.cpp
+  src/exec/merge_join.cpp
   src/optimizer/expr_rule.cpp
   src/optimizer/filter_cleanup.cpp
   src/optimizer/filter_pushdown.cpp

@@ -1,0 +1,155 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <random>
+
+#include "engine/answer_checker.h"
+#include "engine/database.h"
+#include "engine/result_format.h"
+#include "exec/hash_join.h"
+#include "exec/merge_join.h"
+#include "exec/seq_scan.h"
+#include "exec/sort.h"
+#include "expr/evaluator.h"
+
+using namespace cardinal;
+
+namespace {
+
+Value i(std::int64_t v) { return Value(v); }
+Value s(const char* v) { return Value(std::string(v)); }
+
+BoundExprPtr column(std::uint32_t position) {
+    return std::make_shared<const BoundExpr>(BoundExpr{BoundColumn{ColumnId{position}}, std::nullopt});
+}
+
+std::unique_ptr<Operator> sorted_scan(const Table& t) {
+    return std::make_unique<Sort>(std::make_unique<SeqScan>(t), std::vector<SortKey>{{column(0), false}});
+}
+
+struct Fixture {
+    Catalog catalog;
+    Table *l, *r;
+
+    Fixture() {
+        l = &catalog.create_table({"l", {{"k", Type::Int}, {"tag", Type::Text}}});
+        r = &catalog.create_table({"r", {{"k", Type::Int}, {"tag", Type::Text}}});
+    }
+
+    std::vector<Row> merged(BoundExprPtr residual = nullptr) {
+        MergeJoin join(sorted_scan(*l), sorted_scan(*r), {column(0)}, {column(0)}, residual);
+        std::vector<Row> rows;
+        while (auto row = join.next()) rows.push_back(*row);
+        return rows;
+    }
+    std::vector<Row> hashed() {
+        HashJoin join(std::make_unique<SeqScan>(*l), std::make_unique<SeqScan>(*r), {column(0)}, {column(0)}, nullptr, false);
+        std::vector<Row> rows;
+        while (auto row = join.next()) rows.push_back(*row);
+        return rows;
+    }
+};
+
+std::vector<Row> ordered(std::vector<Row> rows) {
+    std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+        for (std::size_t k = 0; k < a.size(); ++k) {
+            if (a[k].is_null() != b[k].is_null()) return a[k].is_null();
+            if (a[k].is_null()) continue;
+            int c = compare_values(a[k], b[k]);
+            if (c != 0) return c < 0;
+        }
+        return false;
+    });
+    return rows;
+}
+
+}  // namespace
+
+TEST_CASE("merge join: matching rows, left values then right values") {
+    Fixture f;
+    f.l->insert({i(1), s("a")});
+    f.l->insert({i(3), s("b")});
+    f.r->insert({i(3), s("x")});
+    f.r->insert({i(2), s("y")});
+    f.r->insert({i(1), s("z")});
+    std::vector<Row> rows = f.merged();
+    REQUIRE(rows.size() == 2);
+    REQUIRE(rows[0] == Row{i(1), s("a"), i(1), s("z")});
+    REQUIRE(rows[1] == Row{i(3), s("b"), i(3), s("x")});
+}
+
+TEST_CASE("merge join: duplicate keys on both sides meet pairwise") {
+    Fixture f;
+    for (const char* t : {"a", "b", "c"}) f.l->insert({i(5), s(t)});
+    for (const char* t : {"x", "y"}) f.r->insert({i(5), s(t)});
+    f.l->insert({i(6), s("d")});
+    f.r->insert({i(4), s("w")});
+    REQUIRE(f.merged().size() == 6);
+    REQUIRE(ordered(f.merged()) == ordered(f.hashed()));
+}
+
+TEST_CASE("merge join: NULL keys never match, not even each other") {
+    Fixture f;
+    f.l->insert({Value(), s("a")});
+    f.l->insert({i(1), s("b")});
+    f.r->insert({Value(), s("x")});
+    f.r->insert({Value(), s("y")});
+    f.r->insert({i(1), s("z")});
+    REQUIRE(f.merged() == std::vector<Row>{{i(1), s("b"), i(1), s("z")}});
+}
+
+TEST_CASE("merge join: an empty side, and no keys in common") {
+    Fixture f;
+    REQUIRE(f.merged().empty());
+    f.l->insert({i(1), s("a")});
+    REQUIRE(f.merged().empty());
+    f.r->insert({i(2), s("b")});
+    REQUIRE(f.merged().empty());
+}
+
+TEST_CASE("merge join: INT and DOUBLE keys match as numbers") {
+    Catalog catalog;
+    Table& a = catalog.create_table({"a", {{"k", Type::Int}}});
+    Table& b = catalog.create_table({"b", {{"k", Type::Double}}});
+    a.insert({i(2)});
+    a.insert({i(3)});
+    b.insert({Value(2.0)});
+    b.insert({Value(2.5)});
+    MergeJoin join(sorted_scan(a), sorted_scan(b), {column(0)}, {column(0)}, nullptr);
+    auto row = join.next();
+    REQUIRE(row.has_value());
+    REQUIRE(row->size() == 2);
+    REQUIRE_FALSE(join.next().has_value());
+}
+
+TEST_CASE("merge join: random tables give the hash join's rows") {
+    std::mt19937_64 rng(2);
+    for (int round = 0; round < 40; ++round) {
+        Fixture f;
+        int nl = static_cast<int>(rng() % 30), nr = static_cast<int>(rng() % 30);
+        auto key = [&] { return rng() % 5 == 0 ? Value() : i(static_cast<std::int64_t>(rng() % 8)); };
+        for (int n = 0; n < nl; ++n) f.l->insert({key(), s("l")});
+        for (int n = 0; n < nr; ++n) f.r->insert({key(), s("r")});
+        INFO("round " << round);
+        REQUIRE(ordered(f.merged()) == ordered(f.hashed()));
+    }
+}
+
+TEST_CASE("merge join: a forced merge plan sorts both inputs and gives the same answer as a nested loop") {
+    Database db;
+    db.execute("CREATE TABLE a (k INT, v TEXT)");
+    db.execute("CREATE TABLE b (k INT, w TEXT)");
+    db.execute("INSERT INTO a VALUES (3, 'a3'), (1, 'a1'), (3, 'a3b'), (NULL, 'an')");
+    db.execute("INSERT INTO b VALUES (3, 'b3'), (2, 'b2'), (1, 'b1'), (3, 'b3b'), (NULL, 'bn')");
+    const char* sql = "SELECT a.v, b.w FROM a JOIN b ON a.k = b.k AND a.v <> b.w";
+    db.set_planner_options(PlannerOptions{JoinMethod::Merge});
+    std::string verbose = format_result(db.execute(std::string("EXPLAIN VERBOSE ") + sql));
+    REQUIRE(verbose.find("MergeJoin[") != std::string::npos);
+    REQUIRE(verbose.find("Sort[") != std::string::npos);
+    QueryResult merged = db.execute(sql);
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    QueryResult looped = db.execute(sql);
+    REQUIRE(merged.rows.size() == 5);
+    REQUIRE(ordered(merged.rows) == ordered(looped.rows));
+    REQUIRE(check_query(db, sql).ok);
+}

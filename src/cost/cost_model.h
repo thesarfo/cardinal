@@ -54,6 +54,9 @@ public:
     virtual Cost sort(double rows) const = 0;
     // Tests every left row against every right row. The right input is read once and kept.
     virtual Cost nested_loop_join(double left_rows, double right_rows, double output_rows) const = 0;
+    // Walks two inputs that are already sorted by the join key side by side. Sorting them, when
+    // they are not, is priced separately with sort().
+    virtual Cost merge_join(double left_rows, double right_rows, double output_rows) const = 0;
     // Loads `build_rows` into a lookup table, then looks up each of `probe_rows`.
     virtual Cost hash_join(double build_rows, double probe_rows, double output_rows) const = 0;
     // Hashes each input row's group key into a table of groups, and passes on one row per group.
@@ -73,6 +76,7 @@ public:
     Cost project(double rows) const override;
     Cost sort(double rows) const override;
     Cost nested_loop_join(double left_rows, double right_rows, double output_rows) const override;
+    Cost merge_join(double left_rows, double right_rows, double output_rows) const override;
     Cost hash_join(double build_rows, double probe_rows, double output_rows) const override;
     Cost hash_aggregate(double input_rows, double groups) const override;
     Cost sort_aggregate(double input_rows, double groups) const override;

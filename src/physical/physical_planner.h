@@ -16,7 +16,7 @@ namespace cardinal {
 //
 // `options` says how to run joins. This is the simple version; the planner that chooses by
 // cost comes later (task 6.3).
-enum class JoinMethod { NestedLoop, Hash };
+enum class JoinMethod { NestedLoop, Hash, Merge };
 
 struct JoinChoice {
     JoinMethod method = JoinMethod::NestedLoop;

@@ -54,6 +54,17 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
                 if (n.residual) text += ", then " + format(*n.residual, position);
                 return text + "]";
             },
+            [&](const PhysicalMergeJoin& n) {
+                children = {n.left.get(), n.right.get()};
+                auto left = [](ColumnId id) { return "l#" + std::to_string(id.value); };
+                auto right = [](ColumnId id) { return "r#" + std::to_string(id.value); };
+                std::string keys;
+                for (std::size_t i = 0; i < n.left_keys.size(); ++i)
+                    keys += (i ? " AND " : "") + format(*n.left_keys[i], left) + " = " + format(*n.right_keys[i], right);
+                std::string text = "MergeJoin[" + keys;
+                if (n.residual) text += ", then " + format(*n.residual, position);
+                return text + "]";
+            },
             [&](const PhysicalNestedLoopJoin& n) {
                 children = {n.left.get(), n.right.get()};
                 return n.condition ? "NestedLoopJoin[" + format(*n.condition, position) + "]"
