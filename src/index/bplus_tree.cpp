@@ -119,6 +119,109 @@ std::vector<std::size_t> BPlusTree::lookup(const Value& key) const {
     return out;
 }
 
+std::vector<std::size_t> BPlusTree::range(const std::optional<Bound>& lo, const std::optional<Bound>& hi) const {
+    std::vector<std::size_t> out;
+    const Node* node = root_.get();
+    const Entry probe{lo ? lo->value : Value(), 0};
+    while (!node->leaf) {
+        std::size_t at = 0;
+        if (lo) at = static_cast<std::size_t>(std::upper_bound(node->entries.begin(), node->entries.end(), probe, entry_less<Entry>) - node->entries.begin());
+        node = node->children[at].get();
+    }
+    auto it = node->entries.begin();
+    if (lo) it = std::lower_bound(node->entries.begin(), node->entries.end(), probe, entry_less<Entry>);
+    bool skipping = lo && !lo->inclusive;  // an exclusive lower bound passes over the entries equal to it
+    while (node) {
+        for (; it != node->entries.end(); ++it) {
+            if (skipping) {
+                if (compare_values(it->key, lo->value) == 0) continue;
+                skipping = false;
+            }
+            if (hi) {
+                int c = compare_values(it->key, hi->value);
+                if (c > 0 || (c == 0 && !hi->inclusive)) return out;
+            }
+            out.push_back(it->row);
+        }
+        node = node->next;
+        if (node) it = node->entries.begin();
+    }
+    return out;
+}
+
+bool BPlusTree::erase_from(Node& node, const Entry& entry) {
+    if (node.leaf) {
+        auto it = std::lower_bound(node.entries.begin(), node.entries.end(), entry, entry_less<Entry>);
+        if (it == node.entries.end() || entry_less(entry, *it)) return false;
+        node.entries.erase(it);
+        return true;
+    }
+    std::size_t at = static_cast<std::size_t>(std::upper_bound(node.entries.begin(), node.entries.end(), entry, entry_less<Entry>) - node.entries.begin());
+    if (!erase_from(*node.children[at], entry)) return false;
+    fix_underfull_child(node, at);
+    return true;
+}
+
+// Child `at` of `parent` may have fallen under half full. Borrow from the left neighbour, else
+// from the right, else merge with one of them. A merge removes a separator from `parent`, which
+// can leave `parent` itself under half full for its own parent to fix.
+void BPlusTree::fix_underfull_child(Node& parent, std::size_t at) {
+    Node& child = *parent.children[at];
+    const std::size_t min = max_keys_ / 2;
+    if (child.entries.size() >= min) return;
+    Node* left = at > 0 ? parent.children[at - 1].get() : nullptr;
+    Node* right = at + 1 < parent.children.size() ? parent.children[at + 1].get() : nullptr;
+
+    if (left && left->entries.size() > min) {
+        if (child.leaf) {
+            child.entries.insert(child.entries.begin(), std::move(left->entries.back()));
+            left->entries.pop_back();
+            parent.entries[at - 1] = child.entries.front();
+        } else {
+            child.entries.insert(child.entries.begin(), std::move(parent.entries[at - 1]));
+            parent.entries[at - 1] = std::move(left->entries.back());
+            left->entries.pop_back();
+            child.children.insert(child.children.begin(), std::move(left->children.back()));
+            left->children.pop_back();
+        }
+        return;
+    }
+    if (right && right->entries.size() > min) {
+        if (child.leaf) {
+            child.entries.push_back(std::move(right->entries.front()));
+            right->entries.erase(right->entries.begin());
+            parent.entries[at] = right->entries.front();
+        } else {
+            child.entries.push_back(std::move(parent.entries[at]));
+            parent.entries[at] = std::move(right->entries.front());
+            right->entries.erase(right->entries.begin());
+            child.children.push_back(std::move(right->children.front()));
+            right->children.erase(right->children.begin());
+        }
+        return;
+    }
+
+    // Merge: always the right one of the pair into the left one, then drop the right.
+    std::size_t l = left ? at - 1 : at;
+    Node& into = *parent.children[l];
+    Node& from = *parent.children[l + 1];
+    if (!into.leaf) into.entries.push_back(std::move(parent.entries[l]));  // the separator comes down
+    into.entries.insert(into.entries.end(), std::make_move_iterator(from.entries.begin()), std::make_move_iterator(from.entries.end()));
+    for (auto& c : from.children) into.children.push_back(std::move(c));
+    into.next = from.next;
+    parent.entries.erase(parent.entries.begin() + static_cast<std::ptrdiff_t>(l));
+    parent.children.erase(parent.children.begin() + static_cast<std::ptrdiff_t>(l) + 1);
+}
+
+bool BPlusTree::erase(const Value& key, std::size_t row_id) {
+    if (key.is_null()) return false;
+    if (!erase_from(*root_, Entry{key, row_id})) return false;
+    --size_;
+    // An inner root left with one child is just that child.
+    if (!root_->leaf && root_->entries.empty()) root_ = std::move(root_->children.front());
+    return true;
+}
+
 int BPlusTree::height() const {
     int levels = 1;
     for (const Node* node = root_.get(); !node->leaf; node = node->children.front().get()) ++levels;

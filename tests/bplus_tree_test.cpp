@@ -119,3 +119,85 @@ TEST_CASE("b+ tree: INT and DOUBLE keys compare as numbers, text by bytes") {
     REQUIRE(words.lookup(Value(std::string("fig"))) == std::vector<std::size_t>{2});
     words.check();
 }
+
+TEST_CASE("b+ tree: range honours open and closed ends, across leaves") {
+    BPlusTree tree(3);
+    for (std::int64_t k = 1; k <= 20; ++k) tree.insert(i(k), static_cast<std::size_t>(k * 10));
+    auto b = [](std::int64_t v, bool inclusive) { return std::optional<Bound>(Bound{Value(v), inclusive}); };
+    REQUIRE(tree.range(b(3, true), b(6, true)) == std::vector<std::size_t>{30, 40, 50, 60});
+    REQUIRE(tree.range(b(3, false), b(6, false)) == std::vector<std::size_t>{40, 50});
+    REQUIRE(tree.range(b(19, true), std::nullopt) == std::vector<std::size_t>{190, 200});
+    REQUIRE(tree.range(std::nullopt, b(2, false)) == std::vector<std::size_t>{10});
+    REQUIRE(tree.range(std::nullopt, std::nullopt).size() == 20);
+    REQUIRE(tree.range(b(6, true), b(3, true)).empty());
+    REQUIRE(tree.range(b(25, true), std::nullopt).empty());
+    REQUIRE(tree.range(b(0, true), b(0, true)).empty());
+}
+
+TEST_CASE("b+ tree: erase removes one entry and reports a missing one") {
+    BPlusTree tree(4);
+    for (std::size_t r = 0; r < 10; ++r) tree.insert(i(static_cast<std::int64_t>(r % 3)), r);
+    REQUIRE(tree.erase(i(1), 4));
+    REQUIRE_FALSE(tree.erase(i(1), 4));
+    REQUIRE_FALSE(tree.erase(i(1), 0));  // key present, but not with that row
+    REQUIRE_FALSE(tree.erase(i(9), 0));
+    REQUIRE(tree.lookup(i(1)) == std::vector<std::size_t>{1, 7});
+    REQUIRE(tree.size() == 9);
+    tree.check();
+}
+
+TEST_CASE("b+ tree: erasing everything leaves an empty, valid tree, in any order") {
+    for (int order = 0; order < 3; ++order) {
+        BPlusTree tree(4);
+        std::vector<std::size_t> rows(300);
+        std::iota(rows.begin(), rows.end(), 0);
+        for (std::size_t r : rows) tree.insert(i(static_cast<std::int64_t>(r)), r);
+        if (order == 1) std::reverse(rows.begin(), rows.end());
+        if (order == 2) std::shuffle(rows.begin(), rows.end(), std::mt19937_64(4));
+        for (std::size_t r : rows) {
+            REQUIRE(tree.erase(i(static_cast<std::int64_t>(r)), r));
+            REQUIRE_NOTHROW(tree.check());
+        }
+        REQUIRE(tree.size() == 0);
+        REQUIRE(tree.height() == 1);
+        REQUIRE(tree.range(std::nullopt, std::nullopt).empty());
+    }
+}
+
+TEST_CASE("b+ tree: random inserts and deletes agree with std::multimap") {
+    for (std::size_t width : {3u, 4u, 7u, 64u}) {
+        BPlusTree tree(width);
+        std::multimap<std::int64_t, std::size_t> model;  // entries kept in (key, row) order below
+        std::mt19937_64 rng(width * 17);
+        std::size_t next_row = 0;
+        for (int step = 0; step < 6000; ++step) {
+            if (model.empty() || rng() % 100 < 60) {
+                auto key = static_cast<std::int64_t>(rng() % 40);
+                tree.insert(i(key), next_row);
+                model.emplace(key, next_row++);
+            } else {
+                auto it = model.begin();
+                std::advance(it, static_cast<std::ptrdiff_t>(rng() % model.size()));
+                REQUIRE(tree.erase(i(it->first), it->second));
+                model.erase(it);
+            }
+            if (step % 500 == 0) REQUIRE_NOTHROW(tree.check());
+        }
+        tree.check();
+        INFO("width " << width);
+        REQUIRE(tree.size() == model.size());
+        for (std::int64_t key = -1; key <= 41; ++key) {
+            std::vector<std::size_t> want;
+            for (auto [lo, hi] = model.equal_range(key); lo != hi; ++lo) want.push_back(lo->second);
+            std::sort(want.begin(), want.end());
+            REQUIRE(tree.lookup(i(key)) == want);
+        }
+        std::vector<std::size_t> all;
+        for (auto& [k, r] : model) all.push_back(r);
+        REQUIRE(tree.range(std::nullopt, std::nullopt).size() == all.size());
+        auto got = tree.range(Bound{i(10), true}, Bound{i(20), false});
+        std::size_t want = 0;
+        for (auto& [k, r] : model) want += (k >= 10 && k < 20);
+        REQUIRE(got.size() == want);
+    }
+}

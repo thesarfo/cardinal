@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "common/value.h"
+#include "index/ordered_index.h"
 
 namespace cardinal {
 
@@ -31,6 +32,14 @@ public:
     // Row ids with exactly this key, in row id order.
     std::vector<std::size_t> lookup(const Value& key) const;
 
+    // Row ids with a key between `lo` and `hi`, in key order and then row id order. No bound
+    // means open on that side. Walks the leaf chain, so a long range reads no inner nodes.
+    std::vector<std::size_t> range(const std::optional<Bound>& lo, const std::optional<Bound>& hi) const;
+
+    // Removes the entry (key, row_id). False if there is no such entry. A node that falls under
+    // half full borrows from a neighbour, or merges with it when the neighbour has none to spare.
+    bool erase(const Value& key, std::size_t row_id);
+
     std::size_t size() const { return size_; }
 
     // Levels, counting the leaves. An empty tree is one empty leaf, height 1.
@@ -51,6 +60,8 @@ private:
     struct Split;
 
     std::optional<Split> insert_into(Node& node, Entry entry);
+    bool erase_from(Node& node, const Entry& entry);
+    void fix_underfull_child(Node& parent, std::size_t at);
     void check_node(const Node& node, const Entry* lo, const Entry* hi, int depth, int& leaf_depth, bool is_root) const;
     void write(const Node& node, int depth, std::string& out) const;
 
