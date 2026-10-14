@@ -85,6 +85,12 @@ struct CreateTable {
     std::string name;
     std::vector<ColumnDef> columns;
 };
+// CREATE INDEX name ON table (column)
+struct CreateIndex {
+    std::string name;
+    std::string table;
+    std::string column;
+};
 struct Insert {
     std::string table;
     std::vector<std::vector<ExprPtr>> rows;
@@ -135,7 +141,7 @@ struct Explain {
 };
 
 struct Statement {
-    std::variant<CreateTable, Insert, Select, Explain, Analyze> node;
+    std::variant<CreateTable, CreateIndex, Insert, Select, Explain, Analyze> node;
 };
 
 ExprPtr clone(const Expr& expr);

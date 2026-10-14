@@ -2,6 +2,7 @@
 
 #include <functional>
 
+#include "catalog/catalog.h"
 #include "physical/plan.h"
 
 namespace cardinal {
@@ -36,6 +37,12 @@ struct PlannerOptions {
     // If set, asked about every join, and its answer is used instead of the two settings above.
     // This is how a planner that prices the options (cost/cost_planner.h) picks per join.
     std::function<JoinChoice(const LogicalJoin&)> choose_join;
+
+    // With a catalog and this set, a Filter straight over a Scan reads through an index when one of
+    // its conditions compares an indexed column with a constant. The conditions the index
+    // answers are dropped from the filter.
+    const Catalog* catalog = nullptr;
+    bool use_indexes = false;
 
     AggregateMethod aggregate_method = AggregateMethod::Hash;
     // Same idea for the aggregates: asked about every one, and used instead of the setting above.

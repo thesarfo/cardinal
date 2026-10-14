@@ -138,11 +138,14 @@ Cost join_step_cost(bool hashable, double left_rows, double right_rows, double o
     return best;
 }
 
-CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model) {
+CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model,
+                           const Catalog* indexes) {
     Pricer pricer(estimator, model);
     Cost total = pricer.price(logical);
 
     PlannerOptions options;
+    options.catalog = indexes;
+    options.use_indexes = indexes != nullptr;
     options.choose_join = [&](const LogicalJoin& join) {
         auto it = pricer.choices.find(&join);
         return it == pricer.choices.end() ? JoinChoice{} : it->second;

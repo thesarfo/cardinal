@@ -1,6 +1,7 @@
 #include "physical/physical_printer.h"
 
 #include "binder/format.h"
+#include "sql/ast_printer.h"
 
 namespace cardinal {
 
@@ -29,6 +30,18 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
     std::string line = std::visit(
         Overloaded{
             [&](const PhysicalSeqScan& n) { return "SeqScan[" + n.table + "]"; },
+            [&](const PhysicalIndexScan& n) {
+                std::string text;
+                if (n.lo && n.hi && n.lo->inclusive && n.hi->inclusive && n.lo->value == n.hi->value) {
+                    text = n.column + " = " + format_literal(n.lo->value);
+                } else {
+                    if (n.lo) text += n.column + (n.lo->inclusive ? " >= " : " > ") + format_literal(n.lo->value);
+                    if (n.lo && n.hi) text += " AND ";
+                    if (n.hi) text += n.column + (n.hi->inclusive ? " <= " : " < ") + format_literal(n.hi->value);
+                    if (text.empty()) text = "all";
+                }
+                return "IndexScan[" + n.table + " using " + n.index + ", " + text + "]";
+            },
             [&](const PhysicalEmpty&) { return std::string("Empty"); },
             [&](const PhysicalHashJoin& n) {
                 children = {n.left.get(), n.right.get()};

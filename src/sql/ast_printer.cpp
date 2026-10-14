@@ -111,6 +111,9 @@ std::string print(const Statement& statement) {
                     out += " (" + c.name + " " + lower(type_name(c.type)) + ")";
                 return out + ")";
             },
+            [](const CreateIndex& n) {
+                return "(create-index " + n.name + " " + n.table + " " + n.column + ")";
+            },
             [](const Insert& n) {
                 std::string out = "(insert " + n.table;
                 for (const auto& row : n.rows) out += " (row" + join_exprs(row) + ")";

@@ -8,6 +8,7 @@
 #include "exec/limit.h"
 #include "exec/nested_loop_join.h"
 #include "exec/project.h"
+#include "exec/index_scan.h"
 #include "exec/seq_scan.h"
 #include "exec/sort.h"
 
@@ -29,6 +30,13 @@ std::unique_ptr<Operator> build_operator(const PhysicalPlan& plan, const Catalog
                 const Table* table = catalog.get_table(n.table);
                 if (!table) throw DbError("unknown table " + n.table);
                 return std::make_unique<SeqScan>(*table);
+            },
+            [&](const PhysicalIndexScan& n) -> std::unique_ptr<Operator> {
+                const Table* table = catalog.get_table(n.table);
+                if (!table) throw DbError("unknown table " + n.table);
+                auto found = table->indexes().find(n.index);
+                if (found == table->indexes().end()) throw DbError("unknown index " + n.index);
+                return std::make_unique<IndexScan>(*table, found->second.index, n.lo, n.hi);
             },
             [&](const PhysicalEmpty&) -> std::unique_ptr<Operator> { return std::make_unique<Empty>(); },
             [&](const PhysicalNestedLoopJoin& n) -> std::unique_ptr<Operator> {

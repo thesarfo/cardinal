@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
 
+#include "index/ordered_index.h"
 #include "logical/plan.h"
 
 namespace cardinal {
@@ -19,6 +21,14 @@ using PhysicalPtr = std::shared_ptr<const PhysicalPlan>;
 // Reads every row of the table in the order it was inserted.
 struct PhysicalSeqScan {
     std::string table;
+};
+// Reads the rows whose `column` is between the bounds through the index called `index`, in
+// key order. No bound means open on that side. A NULL key is never found.
+struct PhysicalIndexScan {
+    std::string table;
+    std::string index;
+    std::string column;
+    std::optional<Bound> lo, hi;
 };
 struct PhysicalEmpty {};
 struct PhysicalFilter {
@@ -77,7 +87,7 @@ struct PhysicalSortAggregate {
 };
 
 struct PhysicalPlan {
-    std::variant<PhysicalSeqScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin,
+    std::variant<PhysicalSeqScan, PhysicalIndexScan, PhysicalEmpty, PhysicalFilter, PhysicalProject, PhysicalSort, PhysicalLimit, PhysicalNestedLoopJoin, PhysicalHashJoin,
                  PhysicalHashAggregate, PhysicalSortAggregate>
         node;
 };

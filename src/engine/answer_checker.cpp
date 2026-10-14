@@ -92,12 +92,13 @@ Observation observe(Database& db, const Statement& rows_stmt, const Statement& k
 class RestoreSettings {
 public:
     explicit RestoreSettings(Database& db)
-        : db_(db), enabled_(db.optimizer_enabled()), planner_(db.forced_planner()), bushy_(db.bushy_joins()), ordering_(db.join_ordering()) {}
+        : db_(db), enabled_(db.optimizer_enabled()), planner_(db.forced_planner()), bushy_(db.bushy_joins()), ordering_(db.join_ordering()), indexes_(db.use_indexes()) {}
     ~RestoreSettings() {
         db_.set_disabled_rules({});
         db_.set_optimizer_enabled(enabled_);
         db_.set_bushy_joins(bushy_);
         db_.set_join_ordering(ordering_);
+        db_.set_use_indexes(indexes_);
         if (planner_) db_.set_planner_options(*planner_);
         else db_.use_cost_based_planner();
     }
@@ -108,6 +109,7 @@ private:
     std::optional<PlannerOptions> planner_;
     bool bushy_;
     bool ordering_;
+    bool indexes_;
 };
 
 }  // namespace
@@ -122,7 +124,9 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
 
     RestoreSettings restore(db);
     // Joins are chosen by cost unless a setup forces a method.
-    auto run = [&](bool optimize, std::set<std::string> disabled, std::optional<PlannerOptions> planner = std::nullopt) {
+    auto run = [&](bool optimize, std::set<std::string> disabled, std::optional<PlannerOptions> planner = std::nullopt,
+                    bool indexes = false) {
+        db.set_use_indexes(indexes);
         db.set_optimizer_enabled(optimize);
         db.set_disabled_rules(std::move(disabled));
         if (planner) db.set_planner_options(*planner);
@@ -198,6 +202,17 @@ CheckOutcome check_query(Database& db, std::string_view sql) {
     Observation as_written = run(true, {});
     db.set_join_ordering(true);
     if (!(as_written == reference)) wrong.push_back({"joins in the order written, optimizer on", as_written});
+
+    // Tables read through an index where a condition fits, with the rules on and off.
+    for (bool optimize : {false, true}) {
+        for (bool forced : {false, true}) {
+            Observation indexed = run(optimize, {}, forced ? std::optional<PlannerOptions>(PlannerOptions{JoinMethod::NestedLoop}) : std::nullopt, true);
+            if (!(indexed == reference))
+                wrong.push_back({std::string("index scans (") + (forced ? "nested loop joins" : "joins by cost") + ", optimizer " +
+                                     (optimize ? "on" : "off") + ")",
+                                 indexed});
+        }
+    }
 
     if (wrong.empty()) return {};
 

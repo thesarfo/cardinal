@@ -51,6 +51,11 @@ int main() {
                 std::cout << "bushy joins " << (db.bushy_joins() ? "on" : "off") << '\n';
                 continue;
             }
+            if (line == ".indexes on" || line == ".indexes off") {
+                db.set_use_indexes(line == ".indexes on");
+                std::cout << "index scans " << (db.use_indexes() ? "on" : "off") << '\n';
+                continue;
+            }
             if (line.rfind(".stats ", 0) == 0) {
                 std::string name = line.substr(7);
                 const cardinal::Table* table = db.catalog().get_table(name);

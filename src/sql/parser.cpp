@@ -95,7 +95,7 @@ private:
     Statement statement(bool allow_explain) {
         const Token& t = peek();
         switch (t.kind) {
-            case TokenKind::Create: return Statement{create_table()};
+            case TokenKind::Create: return create();
             case TokenKind::Insert: return Statement{insert()};
             case TokenKind::Select: return Statement{select()};
             case TokenKind::Analyze: {
@@ -150,8 +150,25 @@ private:
         }
     }
 
-    CreateTable create_table() {
+    Statement create() {
         expect(TokenKind::Create);
+        if (peek().kind == TokenKind::Index) return Statement{create_index()};
+        return Statement{create_table()};
+    }
+
+    CreateIndex create_index() {
+        expect(TokenKind::Index);
+        CreateIndex ci;
+        ci.name = name("an index name");
+        expect(TokenKind::On);
+        ci.table = name("a table name");
+        expect(TokenKind::LParen);
+        ci.column = name("a column name");
+        expect(TokenKind::RParen);
+        return ci;
+    }
+
+    CreateTable create_table() {
         expect(TokenKind::Table);
         CreateTable ct;
         ct.name = name("a table name");

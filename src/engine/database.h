@@ -86,6 +86,9 @@ public:
     // On by default. Turning it off runs plans exactly as the query was written, which
     // is how tests check that the optimizer never changes an answer.
     void set_optimizer_enabled(bool enabled) { optimize_ = enabled; }
+    // Whether a scan with a condition on an indexed column may read through the index.
+    void set_use_indexes(bool enabled) { use_indexes_ = enabled; }
+    bool use_indexes() const { return use_indexes_; }
     bool optimizer_enabled() const { return optimize_; }
 
     // Names of the rules in use, for switching them off one at a time.
@@ -128,6 +131,7 @@ private:
     std::set<std::string> disabled_rules_;
     RuleOptimizer optimizer_{{}};
     bool optimize_ = true;
+    bool use_indexes_ = true;
     bool bushy_ = false;
     bool reorder_joins_ = true;
     std::optional<PlannerOptions> forced_planner_;

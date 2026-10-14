@@ -53,6 +53,7 @@ add_library(cardinal_core
   src/optimizer/cross_to_inner.cpp
   src/optimizer/default_rules.cpp
   src/index/ordered_index.cpp
+  src/exec/index_scan.cpp
   src/optimizer/expr_rule.cpp
   src/optimizer/filter_cleanup.cpp
   src/optimizer/filter_pushdown.cpp

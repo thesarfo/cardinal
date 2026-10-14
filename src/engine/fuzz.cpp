@@ -303,6 +303,10 @@ void create_fuzz_tables(Database& db, uint64_t seed) {
     for (int t = 1; t <= 3; ++t) {
         std::string name = "t" + std::to_string(t);
         db.execute("CREATE TABLE " + name + " (id INT, a INT, b INT, c DOUBLE, s TEXT, f BOOL)");
+        // Indexes on a few columns, some made before the rows go in and one after, so that both
+        // ways of filling an index are exercised.
+        const char* indexed[] = {"a", "b", "c", "s"};
+        db.execute("CREATE INDEX " + name + "_" + indexed[t] + " ON " + name + " (" + indexed[t] + ")");
         int rows = pick(100) < 10 ? 0 : 1 + pick(7);
         if (rows == 0) continue;
         std::string insert = "INSERT INTO " + name + " VALUES ";
@@ -313,6 +317,7 @@ void create_fuzz_tables(Database& db, uint64_t seed) {
                       maybe_null(pick(2) ? "TRUE" : "FALSE") + ")";
         }
         db.execute(insert);
+        db.execute("CREATE INDEX " + name + "_id ON " + name + " (id)");
     }
 }
 

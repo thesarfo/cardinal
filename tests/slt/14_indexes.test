@@ -1,0 +1,52 @@
+# CREATE INDEX, and reading a table through it. Every answer here must equal a plain scan.
+
+statement ok
+CREATE TABLE p (id INT, v INT, w DOUBLE, s TEXT)
+
+statement ok
+INSERT INTO p VALUES (1, 10, 0.5, 'a'), (2, 20, 1.5, 'b'), (3, 20, NULL, 'c')
+
+statement ok
+CREATE INDEX p_v ON p (v)
+
+statement ok
+INSERT INTO p VALUES (4, NULL, 2.5, 'd'), (5, 30, 3.5, NULL)
+
+query I rowsort
+SELECT id FROM p WHERE v = 20
+----
+2
+3
+
+query I rowsort
+SELECT id FROM p WHERE v > 10 AND v < 30
+----
+2
+3
+
+query I rowsort
+SELECT id FROM p WHERE 30 <= v
+----
+5
+
+query I rowsort
+SELECT id FROM p WHERE v = 20 AND s = 'c'
+----
+3
+
+query I rowsort
+SELECT id FROM p WHERE v IS NULL
+----
+4
+
+statement ok
+SELECT id FROM p WHERE v = NULL
+
+statement error
+CREATE INDEX p_v ON p (w)
+
+statement error
+CREATE INDEX q ON p (nope)
+
+statement error
+CREATE INDEX q ON nope (v)

@@ -43,7 +43,10 @@ struct CostBasedPlan {
 // The inputs of a step are priced on their own, which is enough because a step's cost depends
 // on the cost of its inputs only through their total, and the row counts do not depend on the
 // choice made.
-CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model);
+//
+// With a catalog, a Filter over a Scan reads through an index where one fits (not yet priced).
+CostBasedPlan plan_by_cost(const PlanPtr& logical, CardinalityEstimator& estimator, const CostModel& model,
+                           const Catalog* indexes = nullptr);
 
 // The cheapest way to run a join, not counting its inputs. `hashable` says whether its
 // condition has an equality between the two inputs.
