@@ -159,8 +159,10 @@ private:
                         index_choices[&n] = use;
                         if (use) {
                             mark_chosen(node.get(), "IndexScan");
+                            const LogicalPlan* below = n.input.get();
+                            if (const auto* prune = std::get_if<LogicalPrune>(&below->node)) below = prune->input.get();
                             for (StepOptions& step : trace)
-                                if (step.step == n.input.get())
+                                if (step.step == n.input.get() || step.step == below)
                                     for (PlanOption& o : step.options) {
                                         o.chosen = false;
                                         o.note = "the index scan above reads the table instead";
@@ -255,8 +257,10 @@ private:
         // How many rows the index finds: what the answered conditions alone let through.
         PlanPtr answered = std::make_shared<const LogicalPlan>(LogicalPlan{LogicalFilter{filter.input, and_all(match->answered)}});
         double found = estimator_.rows(answered);
-        Cost through = model_.index_scan(in, found);
+        double table_rows = estimator_.rows_of(*match->scan_node);
+        Cost through = model_.index_scan(table_rows, found);
         if (!match->rest.empty()) through += model_.filter(found, static_cast<int>(match->rest.size()));
+        if (match->prune) through += model_.project(found);  // the Prune is still run, after the filter
 
         std::vector<PlanOption> options;
         options.push_back({"Filter", scanned});
@@ -267,7 +271,7 @@ private:
         // Read through the index, the rows arrive in the order of the indexed column. That is
         // worth remembering even when a full scan is cheaper alone: a merge join above can
         // make up the difference by not sorting.
-        const auto& scan = std::get<LogicalScan>(filter.input->node);
+        const LogicalScan& scan = *match->scan;
         std::optional<std::size_t> column_at = std::nullopt;
         if (const Table* table = indexes_->get_table(scan.table)) column_at = table->info().find_column(match->column);
         if (column_at) {
@@ -278,7 +282,7 @@ private:
         if (best == 1) {
             // The scan below is not run: the index scan reads the table instead.
             for (StepOptions& step : trace)
-                if (step.step == filter.input.get())
+                if (step.step == filter.input.get() || step.step == match->scan_node)
                     for (PlanOption& o : step.options) {
                         o.chosen = false;
                         o.note = "the index scan above reads the table instead";

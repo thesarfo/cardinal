@@ -39,7 +39,8 @@ std::optional<Comparison> as_comparison(const BoundExprPtr& expr) {
 }  // namespace
 
 std::optional<IndexMatch> match_index(const LogicalFilter& filter, const Catalog& catalog) {
-    const auto* scan = std::get_if<LogicalScan>(&filter.input->node);
+    const auto* prune = std::get_if<LogicalPrune>(&filter.input->node);
+    const auto* scan = std::get_if<LogicalScan>(prune ? &prune->input->node : &filter.input->node);
     if (!scan) return std::nullopt;
     const Table* table = catalog.get_table(scan->table);
     if (!table || table->indexes().empty()) return std::nullopt;
@@ -55,6 +56,9 @@ std::optional<IndexMatch> match_index(const LogicalFilter& filter, const Catalog
         if (!entry) continue;
 
         IndexMatch match;
+        match.scan = scan;
+        match.scan_node = prune ? prune->input.get() : filter.input.get();
+        match.prune = prune;
         for (const auto& [name, e] : table->indexes())
             if (&e == entry) match.index = name;
         match.column = column;

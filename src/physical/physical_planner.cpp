@@ -68,11 +68,18 @@ std::optional<Planned> plan_index_scan(const LogicalFilter& filter, const Planne
     if (options.choose_index && !options.choose_index(filter)) return std::nullopt;
     std::optional<IndexMatch> match = match_index(filter, *options.catalog);
     if (!match) return std::nullopt;
-    const auto& scan = std::get<LogicalScan>(filter.input->node);
+    const LogicalScan& scan = *match->scan;
     std::size_t column_index = *options.catalog->get_table(scan.table)->info().find_column(match->column);
     PhysicalPtr plan = make(PhysicalIndexScan{scan.table, match->index, match->column, column_index, match->lo, match->hi});
     if (!match->rest.empty()) plan = make(PhysicalFilter{plan, to_positions(and_all(match->rest), scan.columns)});
-    return Planned{plan, scan.columns};
+    if (!match->prune) return Planned{plan, scan.columns};
+    // The columns the Prune kept, read off the rows the scan produces.
+    std::vector<ProjectItem> items;
+    for (ColumnId id : match->prune->columns) {
+        BoundExprPtr column = std::make_shared<const BoundExpr>(BoundExpr{BoundColumn{id}, std::nullopt});
+        items.push_back({to_positions(column, scan.columns), ""});
+    }
+    return Planned{make(PhysicalProject{plan, std::move(items)}), match->prune->columns};
 }
 
 Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {

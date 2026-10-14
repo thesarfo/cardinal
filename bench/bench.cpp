@@ -600,14 +600,82 @@ int run_e2(const Options& opt) {
     return 0;
 }
 
+// E7: what does a merge join cost against a hash join, with the sort paid for and with the
+// inputs already in order from an index? users(id) and orders(user_id) both have an index. The
+// query carries a condition that every row passes (`id >= 0`), so each input can be read
+// through its index, which delivers the join key in order.
+int run_e7(const Options& opt) {
+    std::printf("# experiment: e7, merge join against hash join\n");
+    std::printf("# query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.id >= 0 AND o.user_id >= 0\n");
+    std::printf("# data: users, and 4 orders per user, each with a matching user; index on users.id and orders.user_id; analyzed\n");
+    std::printf("# hash: hash join, building from the left, inputs read through the indexes\n");
+    std::printf("# hash_scan: the same with indexes off, so both inputs are full scans\n");
+    std::printf("# merge_ordered: merge join, both inputs read through their indexes so nothing is sorted\n");
+    std::printf("# merge_sorting: merge join with indexes off, so both inputs are scanned and then sorted\n");
+    std::printf("# cost_based: whatever the planner picks, with indexes on\n");
+    std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median\n", opt.runs);
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::printf("# cpu: %s\n", cpu_model().c_str());
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+    std::printf("experiment,variant,users,orders,rows_out,est_cost,plan,exec_ms,exec_ms_min,exec_ms_max,commit\n");
+
+    const std::string sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.id >= 0 AND o.user_id >= 0";
+    for (int users : {100, 1000, 10000, 50000}) {
+        Database db;
+        cardinal::generate_users_orders(db, {.users = users, .orders_per_user = 4, .seed = opt.seed});
+        db.execute("CREATE INDEX users_id ON users (id)");
+        db.execute("CREATE INDEX orders_user ON orders (user_id)");
+        db.execute("ANALYZE users");
+        db.execute("ANALYZE orders");
+
+        struct Variant {
+            const char* name;
+            bool indexes;
+            std::optional<cardinal::PlannerOptions> forced;
+        };
+        const Variant variants[] = {
+            {"hash", true, cardinal::PlannerOptions{cardinal::JoinMethod::Hash, true}},
+            {"hash_scan", false, cardinal::PlannerOptions{cardinal::JoinMethod::Hash, true}},
+            {"merge_ordered", true, cardinal::PlannerOptions{cardinal::JoinMethod::Merge}},
+            {"merge_sorting", false, cardinal::PlannerOptions{cardinal::JoinMethod::Merge}},
+            {"cost_based", true, std::nullopt},
+        };
+        for (const Variant& v : variants) {
+            db.set_use_indexes(v.indexes);
+            if (v.forced) db.set_planner_options(*v.forced);
+            else db.use_cost_based_planner();
+            cardinal::CostBasedPlan priced = db.cost_of(sql);
+            Cell cell = measure(db, sql, opt.runs);
+            std::string text = cardinal::format_result(db.execute("EXPLAIN VERBOSE " + sql));
+            text = text.substr(text.find("Chosen plan"));
+            std::string plan = text.find("MergeJoin[") != std::string::npos  ? "merge"
+                               : text.find("HashJoin[") != std::string::npos ? "hash"
+                                                                              : "nested loop";
+            if (text.find("IndexScan") != std::string::npos) plan += "+index";
+            if (text.find("Sort[") != std::string::npos) plan += "+sort";
+            std::printf("e7,%s,%d,%d,%zu,%.4f,%s,%.4f,%.4f,%.4f,%s\n", v.name, users, 4 * users, cell.first.rows.size(),
+                        priced.cost.total, plan.c_str(), median(cell.exec_ms),
+                        *std::min_element(cell.exec_ms.begin(), cell.exec_ms.end()),
+                        *std::max_element(cell.exec_ms.begin(), cell.exec_ms.end()), commit.c_str());
+            std::fflush(stdout);
+        }
+        db.set_use_indexes(true);
+        db.use_cost_based_planner();
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     std::string experiment = argc > 1 ? argv[1] : "";
-    if (experiment != "e1" && experiment != "e2" && experiment != "e3" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
+    if (experiment != "e1" && experiment != "e2" && experiment != "e3" && experiment != "e4" && experiment != "e5" && experiment != "e7" && experiment != "calibrate" &&
         experiment != "plan") {
         std::fprintf(stderr,
                      "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
                      "       cardinal_bench e2 [--rows 30000] [--runs 5]\n"
                      "       cardinal_bench e3 [--middle 1000] [--runs 3]\n"
+                     "       cardinal_bench e7 [--runs 5] [--seed 1]\n"
                      "       cardinal_bench e5 [--rows 30000] [--seed 1]\n"
                      "       cardinal_bench calibrate [--runs 7] [--seed 1]\n"
                      "       cardinal_bench e4 [--runs 3] [--seed 1]\n"
@@ -630,6 +698,7 @@ int main(int argc, char** argv) {
     }
     if (experiment == "calibrate") return run_calibrate(opt);
     if (experiment == "e2") return run_e2(opt);
+    if (experiment == "e7") return run_e7(opt);
     if (experiment == "e3") return run_e3(opt);
     if (experiment == "e4") return run_e4(opt);
     if (experiment == "plan") return run_plan(opt);

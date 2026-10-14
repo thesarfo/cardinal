@@ -333,3 +333,19 @@ TEST_CASE("GROUP BY k ORDER BY k needs no sort step when the aggregate delivers 
     REQUIRE(check_query(small, "SELECT k, COUNT(*), SUM(id) FROM a WHERE k < 4 GROUP BY k ORDER BY k").ok);
     REQUIRE(check_query(small, "SELECT k, COUNT(*) FROM a WHERE k < 4 GROUP BY k HAVING COUNT(*) > 3").ok);
 }
+
+TEST_CASE("an index is used for a filter that column pruning has put a Prune under") {
+    Database db;
+    db.execute("CREATE TABLE users (id INT, name TEXT)");
+    db.execute("CREATE TABLE orders (id INT, user_id INT, amount DOUBLE)");
+    db.execute("INSERT INTO users VALUES (1, 'a'), (2, 'b'), (3, 'c'), (4, NULL)");
+    db.execute("INSERT INTO orders VALUES (1, 1, 5.0), (2, 1, 6.0), (3, 3, 1.0), (4, NULL, 2.0), (5, 9, 3.0)");
+    db.execute("CREATE INDEX orders_user ON orders (user_id)");
+    const char* sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE o.user_id >= 1";
+    db.set_planner_options(PlannerOptions{JoinMethod::Hash, true});
+    std::string plan = chosen_plan(db, sql);
+    INFO(plan);
+    REQUIRE(plan.find("IndexScan[orders using orders_user") != std::string::npos);
+    REQUIRE(check_query(db, sql).ok);
+    REQUIRE(check_query(db, "SELECT o.id FROM orders o WHERE o.user_id = 1 AND o.amount > 5").ok);
+}
