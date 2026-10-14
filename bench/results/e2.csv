@@ -1,0 +1,30 @@
+# experiment: e2, index scan against full scan as the share of matching rows grows
+# data: table e2 (id INT, v INT, pad TEXT) with 100000 rows, v a permutation of 0..99999 spread through the table,
+#       index on v, analyzed
+# query: SELECT id FROM e2 WHERE v < K, K = share * rows
+# scan: indexes off. index: index scan forced. planner: the cost-based choice with indexes on
+# est_scan, est_index: what the cost model says each way costs, from the estimated row count
+# runs: 1 warm-up, then 9 timed; exec_ms is the median
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# cpu: Intel(R) Core(TM) i7-14700HX
+# commit: dffc945
+experiment,share_pct,rows_matching,est_rows,est_scan,est_index,planner_picks,scan_ms,index_ms,planner_ms,faster,commit
+e2,0.01,10,10,3000.1000,0.9664,index,12.6989,0.0027,0.0026,index,dffc945
+e2,0.05,50,50,3000.5002,4.1674,index,14.4621,0.0129,0.0129,index,dffc945
+e2,0.1,100,100,3001.0003,8.1687,index,13.3413,0.0321,0.0319,index,dffc945
+e2,0.5,500,500,3005.0016,40.1789,index,13.6938,0.1310,0.1306,index,dffc945
+e2,1,1000,1000,3010.0032,80.1917,index,14.5462,0.2877,0.2869,index,dffc945
+e2,2,2000,2001,3020.0064,160.2173,index,14.0005,0.6305,0.6117,index,dffc945
+e2,5,5000,5001,3050.0100,400.2461,index,14.7372,1.7858,1.8087,index,dffc945
+e2,10,10000,10001,3100.0100,800.2461,index,16.5877,4.6581,5.0688,index,dffc945
+e2,15,15000,15001,3150.0100,1200.2461,index,16.0437,8.0066,5.3457,index,dffc945
+e2,20,20000,20001,3200.0100,1600.2461,index,16.9929,8.9546,8.1497,index,dffc945
+e2,25,25000,25001,3250.0100,2000.2461,index,17.8153,11.0460,10.2184,index,dffc945
+e2,30,30000,30001,3300.0100,2400.2461,index,18.8040,12.2654,12.3590,index,dffc945
+e2,40,40000,40001,3400.0100,3200.2461,index,21.4588,18.0482,14.8857,index,dffc945
+e2,50,50000,50001,3500.0100,4000.2461,scan,18.7007,19.1225,18.7048,scan,dffc945
+e2,60,60000,60001,3600.0100,4800.2461,scan,19.2319,23.0235,20.5264,scan,dffc945
+e2,70,70000,70001,3700.0100,5600.2461,scan,23.7445,27.0786,23.2614,scan,dffc945
+e2,80,80000,80001,3800.0100,6400.2461,scan,25.9433,30.8099,28.9001,scan,dffc945
+e2,90,90000,90001,3900.0100,7200.2461,scan,31.7832,47.3117,32.0451,scan,dffc945

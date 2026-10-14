@@ -31,8 +31,8 @@ struct CostParams {
     // formulas in the usual shape; this is how many rows fit on a pretend page.
     double rows_per_page = 100;
     // Fetching one row found through an index: handling it, plus the jump to wherever it
-    // lives instead of the next row along. A guess to be fitted by experiment E2 (task 9.4).
-    double index_row_cost = 0.1;
+    // lives instead of the next row along. Fitted by experiment E2 (task 9.4, docs/benchmarks.md).
+    double index_row_cost = 0.07;
 };
 
 // What each step costs. Every function returns the cost of that step ALONE, not counting the

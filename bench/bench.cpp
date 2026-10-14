@@ -45,6 +45,7 @@
 #include "binder/binder.h"
 #include "cost/join_order.h"
 #include "engine/datagen.h"
+#include "engine/result_format.h"
 #include "logical/plan_util.h"
 #include "logical/planner.h"
 #include "sql/parser.h"
@@ -532,12 +533,80 @@ int run_plan(const Options& opt) {
 
 }  // namespace
 
+// E2: where does an index scan stop paying? One table, an index on v, and v < K for K chosen to
+// let a given share of the rows through. Each share is run three ways: a full scan with a filter
+// (indexes off), the index scan forced, and what the planner picks. The rows of the table are
+// not in v order, so the index scan really does jump about.
+int run_e2(const Options& opt) {
+    const int n = opt.rows;
+    std::printf("# experiment: e2, index scan against full scan as the share of matching rows grows\n");
+    std::printf("# data: table e2 (id INT, v INT, pad TEXT) with %d rows, v a permutation of 0..%d spread through the table,\n", n, n - 1);
+    std::printf("#       index on v, analyzed\n");
+    std::printf("# query: SELECT id FROM e2 WHERE v < K, K = share * rows\n");
+    std::printf("# scan: indexes off. index: index scan forced. planner: the cost-based choice with indexes on\n");
+    std::printf("# est_scan, est_index: what the cost model says each way costs, from the estimated row count\n");
+    std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median\n", opt.runs);
+    std::printf("# compiler: %s\n", __VERSION__);
+    std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
+    std::printf("# cpu: %s\n", cpu_model().c_str());
+    std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
+    std::printf("# commit: %s\n", commit.c_str());
+    std::printf("experiment,share_pct,rows_matching,est_rows,est_scan,est_index,planner_picks,scan_ms,index_ms,planner_ms,faster,commit\n");
+
+    // A step coprime to n scatters v through the table.
+    std::int64_t step = std::max(1, static_cast<int>(n * 0.618));
+    auto gcd = [](std::int64_t a, std::int64_t b) {
+        while (b) std::swap(a %= b, b);
+        return a;
+    };
+    while (gcd(step, n) != 1) ++step;
+
+    Database db;
+    db.execute("CREATE TABLE e2 (id INT, v INT, pad TEXT)");
+    std::vector<cardinal::Row> rows;
+    for (int i = 0; i < n; ++i)
+        rows.push_back({cardinal::Value(std::int64_t{i}), cardinal::Value(std::int64_t{(i * step) % n}), cardinal::Value(std::string("x"))});
+    db.table("e2")->insert_rows(std::move(rows));
+    db.execute("CREATE INDEX e2_v ON e2 (v)");
+    db.execute("ANALYZE e2");
+
+    cardinal::DefaultCostModel model;
+    const std::vector<double> shares{0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90};
+    for (double share : shares) {
+        int k = std::max(1, static_cast<int>(share / 100.0 * n));
+        std::string sql = "SELECT id FROM e2 WHERE v < " + std::to_string(k);
+
+        db.set_use_indexes(false);
+        db.use_cost_based_planner();
+        Cell scan = measure(db, sql, opt.runs);
+
+        db.set_use_indexes(true);
+        db.set_planner_options(cardinal::PlannerOptions{cardinal::JoinMethod::NestedLoop});
+        Cell index = measure(db, sql, opt.runs);
+
+        db.use_cost_based_planner();
+        Cell planner = measure(db, sql, opt.runs);
+        std::string text = cardinal::format_result(db.execute("EXPLAIN VERBOSE " + sql));
+        bool picks_index = text.substr(text.find("Chosen plan")).find("IndexScan") != std::string::npos;
+
+        double est = scan.analysis.root_estimate;
+        double est_scan = model.scan(n).total + model.filter(n, 1).total + model.project(est).total;
+        double est_index = model.index_scan(n, est).total + model.project(est).total;
+        std::printf("e2,%g,%zu,%.0f,%.4f,%.4f,%s,%.4f,%.4f,%.4f,%s,%s\n", share, scan.first.rows.size(), est, est_scan, est_index,
+                    picks_index ? "index" : "scan", median(scan.exec_ms), median(index.exec_ms), median(planner.exec_ms),
+                    median(index.exec_ms) < median(scan.exec_ms) ? "index" : "scan", commit.c_str());
+        std::fflush(stdout);
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     std::string experiment = argc > 1 ? argv[1] : "";
-    if (experiment != "e1" && experiment != "e3" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
+    if (experiment != "e1" && experiment != "e2" && experiment != "e3" && experiment != "e4" && experiment != "e5" && experiment != "calibrate" &&
         experiment != "plan") {
         std::fprintf(stderr,
                      "usage: cardinal_bench e1 [--sizes 500,1000,2000] [--shares 1,10,50] [--runs 5] [--seed 1]\n"
+                     "       cardinal_bench e2 [--rows 30000] [--runs 5]\n"
                      "       cardinal_bench e3 [--middle 1000] [--runs 3]\n"
                      "       cardinal_bench e5 [--rows 30000] [--seed 1]\n"
                      "       cardinal_bench calibrate [--runs 7] [--seed 1]\n"
@@ -560,6 +629,7 @@ int main(int argc, char** argv) {
         }
     }
     if (experiment == "calibrate") return run_calibrate(opt);
+    if (experiment == "e2") return run_e2(opt);
     if (experiment == "e3") return run_e3(opt);
     if (experiment == "e4") return run_e4(opt);
     if (experiment == "plan") return run_plan(opt);
