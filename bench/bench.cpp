@@ -613,13 +613,14 @@ int run_e7(const Options& opt) {
     std::printf("# merge_ordered: merge join, both inputs read through their indexes so nothing is sorted\n");
     std::printf("# merge_sorting: merge join with indexes off, so both inputs are scanned and then sorted\n");
     std::printf("# cost_based: whatever the planner picks, with indexes on\n");
+    std::printf("# est_cost_planner_pick: the cost model's price for the plan it would pick, the same on every row of a size\n");
     std::printf("# runs: 1 warm-up, then %d timed; exec_ms is the median\n", opt.runs);
     std::printf("# compiler: %s\n", __VERSION__);
     std::printf("# build: %s, flags: %s\n", CARDINAL_BUILD_TYPE, CARDINAL_FLAGS);
     std::printf("# cpu: %s\n", cpu_model().c_str());
     std::string commit = shell_output("git rev-parse --short HEAD 2>/dev/null");
     std::printf("# commit: %s\n", commit.c_str());
-    std::printf("experiment,variant,users,orders,rows_out,est_cost,plan,exec_ms,exec_ms_min,exec_ms_max,commit\n");
+    std::printf("experiment,variant,users,orders,rows_out,est_cost_planner_pick,plan,exec_ms,exec_ms_min,exec_ms_max,commit\n");
 
     const std::string sql = "SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.id >= 0 AND o.user_id >= 0";
     for (int users : {100, 1000, 10000, 50000}) {

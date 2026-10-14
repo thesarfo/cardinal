@@ -1,0 +1,35 @@
+# experiment: e7, merge join against hash join
+# query: SELECT u.name FROM users u JOIN orders o ON u.id = o.user_id WHERE u.id >= 0 AND o.user_id >= 0
+# data: users, and 4 orders per user, each with a matching user; index on users.id and orders.user_id; analyzed
+# hash: hash join, building from the left, inputs read through the indexes
+# hash_scan: the same with indexes off, so both inputs are full scans
+# merge_ordered: merge join, both inputs read through their indexes so nothing is sorted
+# merge_sorting: merge join with indexes off, so both inputs are scanned and then sorted
+# cost_based: whatever the planner picks, with indexes on
+# est_cost_planner_pick: the cost model's price for the plan it would pick, the same on every row of a size
+# runs: 1 warm-up, then 9 timed; exec_ms is the median
+# compiler: 15.2.0
+# build: Release, flags: -O2 -DNDEBUG
+# cpu: Intel(R) Core(TM) i7-14700HX
+# commit: 5c1d1d7
+experiment,variant,users,orders,rows_out,est_cost_planner_pick,plan,exec_ms,exec_ms_min,exec_ms_max,commit
+e7,hash,100,400,400,34.0000,hash+index,0.3131,0.2960,0.3187,5c1d1d7
+e7,hash_scan,100,400,400,34.0000,hash,0.3569,0.3555,0.3684,5c1d1d7
+e7,merge_ordered,100,400,400,34.0000,merge+index,0.2778,0.2635,0.4185,5c1d1d7
+e7,merge_sorting,100,400,400,34.0000,merge+sort,0.4493,0.4456,0.4852,5c1d1d7
+e7,cost_based,100,400,400,34.0000,hash,0.3578,0.3467,0.3805,5c1d1d7
+e7,hash,1000,4000,4000,340.0000,hash+index,3.3809,2.6942,4.2898,5c1d1d7
+e7,hash_scan,1000,4000,4000,340.0000,hash,3.3471,3.2734,3.5201,5c1d1d7
+e7,merge_ordered,1000,4000,4000,340.0000,merge+index,2.6239,2.5197,2.7345,5c1d1d7
+e7,merge_sorting,1000,4000,4000,340.0000,merge+sort,4.3942,3.9186,5.0208,5c1d1d7
+e7,cost_based,1000,4000,4000,340.0000,hash,2.6828,2.5808,2.9613,5c1d1d7
+e7,hash,10000,40000,40000,3400.0000,hash+index,33.7314,31.9153,41.9207,5c1d1d7
+e7,hash_scan,10000,40000,40000,3400.0000,hash,35.5068,30.7239,42.8504,5c1d1d7
+e7,merge_ordered,10000,40000,40000,3400.0000,merge+index,28.1171,23.7514,33.8787,5c1d1d7
+e7,merge_sorting,10000,40000,40000,3400.0000,merge+sort,60.3548,54.7128,65.5321,5c1d1d7
+e7,cost_based,10000,40000,40000,3400.0000,hash,32.3535,28.6106,34.8741,5c1d1d7
+e7,hash,50000,200000,200000,17000.0000,hash+index,190.0805,179.9074,215.0007,5c1d1d7
+e7,hash_scan,50000,200000,200000,17000.0000,hash,208.6236,200.8011,264.2373,5c1d1d7
+e7,merge_ordered,50000,200000,200000,17000.0000,merge+index,172.8742,159.7508,203.8090,5c1d1d7
+e7,merge_sorting,50000,200000,200000,17000.0000,merge+sort,354.2669,300.4637,382.3929,5c1d1d7
+e7,cost_based,50000,200000,200000,17000.0000,hash,190.1542,179.2131,274.4950,5c1d1d7

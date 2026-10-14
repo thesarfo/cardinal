@@ -1,62 +1,62 @@
 # experiment: plan, how long the join order search takes
 # data: tables t0..t13 (id INT, k INT), 100 rows each, k has 10 values, analyzed
 # shapes: line (t0.k = t1.k, t1.k = t2.k, ...) and clique (every pair joined on k)
-# runs: 1 warm-up, then 100 timed; plan_ms is the median, with the fastest and slowest
+# runs: 1 warm-up, then 5 timed; plan_ms is the median, with the fastest and slowest
 # compiler: 15.2.0
 # build: Release, flags: -O2 -DNDEBUG
 # cpu: Intel(R) Core(TM) i7-14700HX
-# commit: be3d5d6
+# commit: f540ffe
 # search: left-deep or bushy; above 10 tables both use the greedy search
 experiment,shape,search,tables,joins_priced,plan_ms,plan_ms_min,plan_ms_max,commit
-plan,line,left-deep,2,2,0.004,0.004,0.014,be3d5d6
-plan,line,left-deep,3,6,0.007,0.007,0.013,be3d5d6
-plan,line,left-deep,4,12,0.012,0.012,0.019,be3d5d6
-plan,line,left-deep,5,20,0.018,0.018,0.027,be3d5d6
-plan,line,left-deep,6,30,0.026,0.026,0.041,be3d5d6
-plan,line,left-deep,7,42,0.039,0.037,0.052,be3d5d6
-plan,line,left-deep,8,56,0.057,0.051,0.082,be3d5d6
-plan,line,left-deep,9,72,0.089,0.080,0.121,be3d5d6
-plan,line,left-deep,10,90,0.139,0.129,0.171,be3d5d6
-plan,line,greedy,11,155,0.195,0.186,0.246,be3d5d6
-plan,line,greedy,12,187,0.307,0.290,0.443,be3d5d6
-plan,line,greedy,13,222,0.412,0.387,0.597,be3d5d6
-plan,line,greedy,14,260,0.479,0.437,0.597,be3d5d6
-plan,line,bushy,2,2,0.003,0.003,0.005,be3d5d6
-plan,line,bushy,3,8,0.007,0.007,0.013,be3d5d6
-plan,line,bushy,4,20,0.014,0.013,0.018,be3d5d6
-plan,line,bushy,5,40,0.027,0.025,0.040,be3d5d6
-plan,line,bushy,6,70,0.048,0.046,0.059,be3d5d6
-plan,line,bushy,7,112,0.079,0.072,0.099,be3d5d6
-plan,line,bushy,8,168,0.116,0.105,0.143,be3d5d6
-plan,line,bushy,9,240,0.203,0.195,0.265,be3d5d6
-plan,line,bushy,10,330,0.450,0.388,0.603,be3d5d6
-plan,line,greedy,11,155,0.223,0.202,0.271,be3d5d6
-plan,line,greedy,12,187,0.301,0.270,0.326,be3d5d6
-plan,line,greedy,13,222,0.349,0.320,0.414,be3d5d6
-plan,line,greedy,14,260,0.445,0.416,0.482,be3d5d6
-plan,clique,left-deep,2,2,0.003,0.003,0.006,be3d5d6
-plan,clique,left-deep,3,9,0.008,0.007,0.012,be3d5d6
-plan,clique,left-deep,4,28,0.018,0.017,0.024,be3d5d6
-plan,clique,left-deep,5,75,0.045,0.043,0.054,be3d5d6
-plan,clique,left-deep,6,186,0.104,0.100,0.116,be3d5d6
-plan,clique,left-deep,7,441,0.230,0.221,0.260,be3d5d6
-plan,clique,left-deep,8,1016,0.583,0.538,0.651,be3d5d6
-plan,clique,left-deep,9,2295,1.229,1.185,1.350,be3d5d6
-plan,clique,left-deep,10,5110,2.688,2.585,4.306,be3d5d6
-plan,clique,greedy,11,605,0.865,0.789,1.024,be3d5d6
-plan,clique,greedy,12,792,1.191,1.047,1.582,be3d5d6
-plan,clique,greedy,13,1014,1.461,1.374,1.604,be3d5d6
-plan,clique,greedy,14,1274,2.488,1.906,3.533,be3d5d6
-plan,clique,bushy,2,2,0.004,0.004,0.005,be3d5d6
-plan,clique,bushy,3,12,0.012,0.011,0.018,be3d5d6
-plan,clique,bushy,4,50,0.035,0.031,0.050,be3d5d6
-plan,clique,bushy,5,180,0.107,0.093,0.132,be3d5d6
-plan,clique,bushy,6,602,0.298,0.259,0.379,be3d5d6
-plan,clique,bushy,7,1932,0.838,0.754,1.161,be3d5d6
-plan,clique,bushy,8,6050,2.298,2.122,3.838,be3d5d6
-plan,clique,bushy,9,18660,5.975,5.106,6.709,be3d5d6
-plan,clique,bushy,10,57002,17.582,14.655,28.568,be3d5d6
-plan,clique,greedy,11,605,0.818,0.756,1.011,be3d5d6
-plan,clique,greedy,12,792,1.168,1.078,1.394,be3d5d6
-plan,clique,greedy,13,1014,1.576,1.440,1.963,be3d5d6
-plan,clique,greedy,14,1274,2.174,2.031,2.606,be3d5d6
+plan,line,left-deep,2,2,0.005,0.005,0.010,f540ffe
+plan,line,left-deep,3,6,0.011,0.010,0.015,f540ffe
+plan,line,left-deep,4,12,0.019,0.018,0.022,f540ffe
+plan,line,left-deep,5,20,0.029,0.027,0.044,f540ffe
+plan,line,left-deep,6,30,0.044,0.041,0.048,f540ffe
+plan,line,left-deep,7,42,0.062,0.059,0.090,f540ffe
+plan,line,left-deep,8,56,0.083,0.082,0.115,f540ffe
+plan,line,left-deep,9,72,0.129,0.124,0.148,f540ffe
+plan,line,left-deep,10,90,0.213,0.210,0.238,f540ffe
+plan,line,greedy,11,155,0.273,0.263,0.284,f540ffe
+plan,line,greedy,12,187,0.348,0.343,0.383,f540ffe
+plan,line,greedy,13,222,0.450,0.446,0.465,f540ffe
+plan,line,greedy,14,260,0.597,0.591,0.622,f540ffe
+plan,line,bushy,2,2,0.006,0.005,0.008,f540ffe
+plan,line,bushy,3,8,0.013,0.012,0.019,f540ffe
+plan,line,bushy,4,20,0.023,0.021,0.026,f540ffe
+plan,line,bushy,5,40,0.041,0.038,0.045,f540ffe
+plan,line,bushy,6,70,0.064,0.062,0.073,f540ffe
+plan,line,bushy,7,112,0.112,0.107,0.122,f540ffe
+plan,line,bushy,8,168,0.176,0.170,0.195,f540ffe
+plan,line,bushy,9,240,0.307,0.295,0.315,f540ffe
+plan,line,bushy,10,330,0.547,0.538,0.595,f540ffe
+plan,line,greedy,11,155,0.267,0.264,0.293,f540ffe
+plan,line,greedy,12,187,0.348,0.341,0.366,f540ffe
+plan,line,greedy,13,222,0.461,0.450,0.471,f540ffe
+plan,line,greedy,14,260,0.565,0.558,0.587,f540ffe
+plan,clique,left-deep,2,2,0.005,0.004,0.007,f540ffe
+plan,clique,left-deep,3,9,0.013,0.011,0.017,f540ffe
+plan,clique,left-deep,4,28,0.029,0.028,0.033,f540ffe
+plan,clique,left-deep,5,75,0.069,0.066,0.076,f540ffe
+plan,clique,left-deep,6,186,0.144,0.139,0.158,f540ffe
+plan,clique,left-deep,7,441,0.333,0.321,0.334,f540ffe
+plan,clique,left-deep,8,1016,0.722,0.703,0.737,f540ffe
+plan,clique,left-deep,9,2295,1.540,1.514,1.671,f540ffe
+plan,clique,left-deep,10,5110,3.187,3.047,3.269,f540ffe
+plan,clique,greedy,11,605,0.862,0.840,0.888,f540ffe
+plan,clique,greedy,12,792,1.291,1.240,1.644,f540ffe
+plan,clique,greedy,13,1014,1.878,1.868,2.017,f540ffe
+plan,clique,greedy,14,1274,2.396,2.264,2.647,f540ffe
+plan,clique,bushy,2,2,0.005,0.004,0.007,f540ffe
+plan,clique,bushy,3,12,0.013,0.012,0.017,f540ffe
+plan,clique,bushy,4,50,0.036,0.033,0.043,f540ffe
+plan,clique,bushy,5,180,0.106,0.101,0.112,f540ffe
+plan,clique,bushy,6,602,0.276,0.271,0.283,f540ffe
+plan,clique,bushy,7,1932,0.753,0.751,0.775,f540ffe
+plan,clique,bushy,8,6050,2.213,2.100,2.320,f540ffe
+plan,clique,bushy,9,18660,6.165,6.084,6.191,f540ffe
+plan,clique,bushy,10,57002,20.840,18.255,22.255,f540ffe
+plan,clique,greedy,11,605,0.864,0.826,0.883,f540ffe
+plan,clique,greedy,12,792,1.198,1.180,1.237,f540ffe
+plan,clique,greedy,13,1014,1.699,1.632,1.729,f540ffe
+plan,clique,greedy,14,1274,2.564,2.405,2.648,f540ffe
