@@ -1,10 +1,13 @@
 #pragma once
 
+#include <map>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "catalog/table_info.h"
 #include "common/value.h"
+#include "index/ordered_index.h"
 #include "stats/table_stats.h"
 
 namespace cardinal {
@@ -25,6 +28,20 @@ public:
     // Same checks for every row first, then adds them all. If any row is bad, none are added.
     void insert_rows(std::vector<Row> rows);
 
+    // An index on one column, filled from the rows already here and kept in step by every
+    // later insert. Throws DbError if the name is taken or the column does not exist.
+    void create_index(const std::string& name, const std::string& column);
+
+    struct IndexEntry {
+        std::string column;
+        std::size_t column_index;
+        OrderedIndex index;
+    };
+    const std::map<std::string, IndexEntry>& indexes() const { return indexes_; }
+
+    // The index on this column, if there is one.
+    const IndexEntry* index_on(const std::string& column) const;
+
     // Set by ANALYZE. None until then.
     const std::optional<TableStats>& stats() const { return stats_; }
     void set_stats(TableStats stats) { stats_ = std::move(stats); }
@@ -36,6 +53,7 @@ private:
     TableInfo info_;
     std::vector<Row> rows_;
     std::optional<TableStats> stats_;
+    std::map<std::string, IndexEntry> indexes_;
 };
 
 }  // namespace cardinal
