@@ -229,3 +229,80 @@ TEST_CASE("sorted_by: a sort aggregate over an index scan says its input was alr
     db.use_cost_based_planner();
     REQUIRE(ordered(sorted.rows) == ordered(db.execute(sql).rows));
 }
+
+namespace {
+
+// a and b with an index on k each; `rows` rows, k taking `distinct` values spread through the table.
+Database indexed_big(int rows, int distinct) {
+    Database db;
+    db.execute("CREATE TABLE a (id INT, k INT)");
+    db.execute("CREATE TABLE b (id INT, k INT)");
+    for (const char* t : {"a", "b"}) {
+        std::string insert = std::string("INSERT INTO ") + t + " VALUES ";
+        for (int n = 0; n < rows; ++n)
+            insert += std::string(n ? ", (" : "(") + std::to_string(n) + ", " + std::to_string((n * 7919) % distinct) + ")";
+        db.execute(insert);
+        db.execute(std::string("CREATE INDEX ") + t + "_k ON " + t + " (k)");
+        db.execute(std::string("ANALYZE ") + t);
+    }
+    return db;
+}
+
+}  // namespace
+
+TEST_CASE("merge join wins when both inputs arrive in key order from an index") {
+    Database db = indexed_big(10000, 10000);
+    const char* sql = "SELECT a.id, b.id FROM a JOIN b ON a.k = b.k WHERE a.k < 2000 AND b.k < 2000";
+    std::string plan = chosen_plan(db, sql);
+    INFO(plan);
+    REQUIRE(plan.find("MergeJoin[") != std::string::npos);
+    REQUIRE(plan.find("Sort[") == std::string::npos);
+    REQUIRE(plan.find("IndexScan[a using a_k") != std::string::npos);
+    REQUIRE(plan.find("IndexScan[b using b_k") != std::string::npos);
+
+    // and it is listed as a way to run the join, with the reason it won
+    std::string all = format_result(db.execute(std::string("EXPLAIN VERBOSE ") + sql));
+    REQUIRE(all.find("MergeJoin (both inputs in order)") != std::string::npos);
+
+    QueryResult merged = db.execute(sql);
+    db.set_use_indexes(false);
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    // nested loop on 2000 x 2000 rows is fine; the answers must agree
+    REQUIRE(ordered(merged.rows) == ordered(db.execute(sql).rows));
+}
+
+TEST_CASE("merge join is not chosen when the input would have to be sorted and hashing is cheaper") {
+    Database db = indexed_big(10000, 10000);
+    std::string plan = chosen_plan(db, "SELECT a.id, b.id FROM a JOIN b ON a.k = b.k");
+    REQUIRE(plan.find("HashJoin[") != std::string::npos);
+}
+
+TEST_CASE("an ORDER BY the join key is met by a merge join's own order") {
+    // Many rows per key: the join's output is much larger than its inputs, so sorting the
+    // output would cost more than sorting the inputs and merging.
+    Database db = indexed_big(60, 4);
+    const char* sql = "SELECT a.k, b.id FROM a JOIN b ON a.k = b.k WHERE a.id < 40 AND b.id < 40 ORDER BY a.k";
+    REQUIRE(check_query(db, sql).ok);
+
+    // On bigger tables the plan is chosen by cost; the answer still has to match.
+    Database big = indexed_big(2000, 20);
+    const char* big_sql = "SELECT a.k, b.id FROM a JOIN b ON a.k = b.k WHERE a.id < 100 AND b.id < 100 ORDER BY a.k";
+    QueryResult chosen = big.execute(big_sql);
+    big.set_use_indexes(false);
+    big.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    QueryResult looped = big.execute(big_sql);
+    REQUIRE(chosen.rows.size() == looped.rows.size());
+    for (std::size_t i = 1; i < chosen.rows.size(); ++i) REQUIRE(compare_values(chosen.rows[i - 1][0], chosen.rows[i][0]) <= 0);
+}
+
+TEST_CASE("merge join chains: the output of one merge feeds the next without a sort") {
+    Database db = indexed_big(40, 40);
+    db.execute("CREATE TABLE c (id INT, k INT)");
+    std::string insert = "INSERT INTO c VALUES ";
+    for (int n = 0; n < 40; ++n) insert += std::string(n ? ", (" : "(") + std::to_string(n) + ", " + std::to_string(n) + ")";
+    db.execute(insert);
+    db.execute("CREATE INDEX c_k ON c (k)");
+    db.execute("ANALYZE c");
+    const char* sql = "SELECT a.id FROM a, b, c WHERE a.k = b.k AND b.k = c.k AND a.k < 30 AND b.k < 30 AND c.k < 30";
+    REQUIRE(check_query(db, sql).ok);
+}
