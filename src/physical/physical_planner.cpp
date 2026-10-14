@@ -6,6 +6,7 @@
 #include "optimizer/conjuncts.h"
 #include "physical/index_match.h"
 #include "physical/join_keys.h"
+#include "physical/sorted_by.h"
 
 
 namespace cardinal {
@@ -68,7 +69,8 @@ std::optional<Planned> plan_index_scan(const LogicalFilter& filter, const Planne
     std::optional<IndexMatch> match = match_index(filter, *options.catalog);
     if (!match) return std::nullopt;
     const auto& scan = std::get<LogicalScan>(filter.input->node);
-    PhysicalPtr plan = make(PhysicalIndexScan{scan.table, match->index, match->column, match->lo, match->hi});
+    std::size_t column_index = *options.catalog->get_table(scan.table)->info().find_column(match->column);
+    PhysicalPtr plan = make(PhysicalIndexScan{scan.table, match->index, match->column, column_index, match->lo, match->hi});
     if (!match->rest.empty()) plan = make(PhysicalFilter{plan, to_positions(and_all(match->rest), scan.columns)});
     return Planned{plan, scan.columns};
 }
@@ -107,8 +109,9 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                             right_order.push_back({right_keys.back(), false});
                         }
                         BoundExprPtr residual = split.residual.empty() ? nullptr : to_positions(and_all(split.residual), layout);
-                        PhysicalPtr sorted_left = make(PhysicalSort{left.plan, std::move(left_order)});
-                        PhysicalPtr sorted_right = make(PhysicalSort{right.plan, std::move(right_order)});
+                        // An input that already arrives in key order is not sorted again.
+                        PhysicalPtr sorted_left = satisfies(sorted_by(*left.plan), left_order) ? left.plan : make(PhysicalSort{left.plan, std::move(left_order)});
+                        PhysicalPtr sorted_right = satisfies(sorted_by(*right.plan), right_order) ? right.plan : make(PhysicalSort{right.plan, std::move(right_order)});
                         return Planned{make(PhysicalMergeJoin{sorted_left, sorted_right, std::move(left_keys), std::move(right_keys), residual}),
                                        layout};
                     }
@@ -157,8 +160,12 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                     layout.push_back(item.output);
                 }
                 AggregateMethod method = options.choose_aggregate ? options.choose_aggregate(n) : options.aggregate_method;
-                if (method == AggregateMethod::Sort)
-                    return Planned{make(PhysicalSortAggregate{in.plan, std::move(keys), std::move(calls)}), layout};
+                if (method == AggregateMethod::Sort) {
+                    std::vector<SortKey> want;
+                    for (const BoundExprPtr& key : keys) want.push_back({key, false});
+                    bool presorted = !want.empty() && satisfies(sorted_by(*in.plan), want);
+                    return Planned{make(PhysicalSortAggregate{in.plan, std::move(keys), std::move(calls), presorted}), layout};
+                }
                 return Planned{make(PhysicalHashAggregate{in.plan, std::move(keys), std::move(calls)}), layout};
             },
             [&](const LogicalSort& n) {
@@ -166,6 +173,8 @@ Planned plan_node(const LogicalPlan& plan, const PlannerOptions& options) {
                 std::vector<SortKey> keys;
                 for (const SortKey& key : n.keys)
                     keys.push_back({to_positions(key.expr, in.layout), key.descending});
+                // Rows that already arrive in this order (read through an index, say) need no sort.
+                if (satisfies(sorted_by(*in.plan), keys)) return in;
                 return Planned{make(PhysicalSort{in.plan, std::move(keys)}), in.layout};
             },
             [&](const LogicalLimit& n) {

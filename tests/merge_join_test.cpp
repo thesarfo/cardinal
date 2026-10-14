@@ -153,3 +153,79 @@ TEST_CASE("merge join: a forced merge plan sorts both inputs and gives the same 
     REQUIRE(ordered(merged.rows) == ordered(looped.rows));
     REQUIRE(check_query(db, sql).ok);
 }
+
+namespace {
+
+Database indexed_pair() {
+    Database db;
+    db.execute("CREATE TABLE a (k INT, v TEXT)");
+    db.execute("CREATE TABLE b (k INT, w TEXT)");
+    db.execute("CREATE INDEX a_k ON a (k)");
+    db.execute("CREATE INDEX b_k ON b (k)");
+    for (int n = 0; n < 40; ++n) {
+        db.execute("INSERT INTO a VALUES (" + std::to_string((n * 7) % 10) + ", 'a" + std::to_string(n) + "')");
+        db.execute("INSERT INTO b VALUES (" + std::to_string((n * 3) % 10) + ", 'b" + std::to_string(n) + "')");
+    }
+    return db;
+}
+
+std::string chosen_plan(Database& db, const std::string& sql) {
+    std::string text = format_result(db.execute("EXPLAIN VERBOSE " + sql));
+    return text.substr(text.find("Chosen plan"));
+}
+
+}  // namespace
+
+TEST_CASE("sorted_by: an index scan says what order it reads in") {
+    Database db = indexed_pair();
+    std::string plan = chosen_plan(db, "SELECT v FROM a WHERE k >= 0");
+    REQUIRE(plan.find("sorted by #0") != std::string::npos);
+}
+
+TEST_CASE("sorted_by: a merge join does not sort an input that already arrives in key order") {
+    Database db = indexed_pair();
+    db.set_planner_options(PlannerOptions{JoinMethod::Merge});
+    const char* sql = "SELECT a.v, b.w FROM a JOIN b ON a.k = b.k WHERE a.k >= 0 AND b.k >= 0";
+    std::string plan = chosen_plan(db, sql);
+    REQUIRE(plan.find("MergeJoin[") != std::string::npos);
+    REQUIRE(plan.find("Sort[") == std::string::npos);  // both sides come from an index scan
+    QueryResult merged = db.execute(sql);
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    REQUIRE(ordered(merged.rows) == ordered(db.execute(sql).rows));
+    REQUIRE(check_query(db, sql).ok);
+}
+
+TEST_CASE("sorted_by: one side sorted, the other not, still joins correctly") {
+    Database db = indexed_pair();
+    db.set_planner_options(PlannerOptions{JoinMethod::Merge});
+    const char* sql = "SELECT a.v, b.w FROM a JOIN b ON a.k = b.k WHERE a.k >= 3";
+    std::string plan = chosen_plan(db, sql);
+    REQUIRE(plan.find("MergeJoin[") != std::string::npos);
+    REQUIRE(std::count(plan.begin(), plan.end(), '\n') > 0);
+    QueryResult merged = db.execute(sql);
+    db.set_planner_options(PlannerOptions{JoinMethod::NestedLoop});
+    REQUIRE(ordered(merged.rows) == ordered(db.execute(sql).rows));
+}
+
+TEST_CASE("sorted_by: ORDER BY on the indexed column needs no sort step") {
+    Database db = indexed_pair();
+    std::string plan = chosen_plan(db, "SELECT v FROM a WHERE k > 4 ORDER BY k");
+    REQUIRE(plan.find("IndexScan") != std::string::npos);
+    REQUIRE(plan.find("Sort[") == std::string::npos);
+    REQUIRE(check_query(db, "SELECT v FROM a WHERE k > 4 ORDER BY k").ok);
+    // descending is a different order, so it does sort
+    REQUIRE(chosen_plan(db, "SELECT v FROM a WHERE k > 4 ORDER BY k DESC").find("Sort[") != std::string::npos);
+}
+
+TEST_CASE("sorted_by: a sort aggregate over an index scan says its input was already sorted") {
+    Database db = indexed_pair();
+    PlannerOptions options{JoinMethod::NestedLoop};
+    options.aggregate_method = AggregateMethod::Sort;
+    db.set_planner_options(options);
+    const char* sql = "SELECT k, COUNT(*) FROM a WHERE k >= 2 GROUP BY k";
+    REQUIRE(chosen_plan(db, sql).find("input already sorted") != std::string::npos);
+    QueryResult sorted = db.execute(sql);
+    db.set_use_indexes(false);
+    db.use_cost_based_planner();
+    REQUIRE(ordered(sorted.rows) == ordered(db.execute(sql).rows));
+}

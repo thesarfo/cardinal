@@ -67,7 +67,7 @@ std::unique_ptr<Operator> build_operator(const PhysicalPlan& plan, const Catalog
                 return std::make_unique<HashAggregate>(build_operator(*n.input, catalog), n.keys, n.aggregates);
             },
             [&](const PhysicalSortAggregate& n) -> std::unique_ptr<Operator> {
-                return std::make_unique<SortAggregate>(build_operator(*n.input, catalog), n.keys, n.aggregates);
+                return std::make_unique<SortAggregate>(build_operator(*n.input, catalog), n.keys, n.aggregates, n.presorted);
             },
             [&](const PhysicalLimit& n) -> std::unique_ptr<Operator> {
                 return std::make_unique<Limit>(build_operator(*n.input, catalog), n.count);

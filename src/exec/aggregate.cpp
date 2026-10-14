@@ -159,8 +159,8 @@ int compare_nullable(const Value& a, const Value& b) {
 }  // namespace
 
 SortAggregate::SortAggregate(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> keys,
-                             std::vector<PhysicalAggregateCall> calls)
-    : input_(std::move(input)), keys_(std::move(keys)), calls_(std::move(calls)) {}
+                             std::vector<PhysicalAggregateCall> calls, bool presorted)
+    : input_(std::move(input)), keys_(std::move(keys)), calls_(std::move(calls)), presorted_(presorted) {}
 
 std::optional<Row> SortAggregate::produce() {
     if (!loaded_) {
@@ -183,9 +183,10 @@ std::optional<Row> SortAggregate::produce() {
                 if (int c = compare_nullable(a[k], b[k]); c != 0) return c;
             return 0;
         };
-        std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
-            return compare_keys(key_values[a], key_values[b]) < 0;
-        });
+        if (!presorted_)
+            std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+                return compare_keys(key_values[a], key_values[b]) < 0;
+            });
 
         auto finish = [&](std::vector<Value> key, const std::vector<AggregateState>& states) {
             Row out = std::move(key);

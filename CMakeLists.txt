@@ -64,6 +64,7 @@ add_library(cardinal_core
   src/optimizer/rule_optimizer.cpp
   src/physical/index_match.cpp
   src/physical/join_keys.cpp
+  src/physical/sorted_by.cpp
   src/physical/physical_planner.cpp
   src/physical/physical_printer.cpp
   src/stats/analyze.cpp

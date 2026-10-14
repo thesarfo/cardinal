@@ -1,6 +1,7 @@
 #include "physical/physical_printer.h"
 
 #include "binder/format.h"
+#include "physical/sorted_by.h"
 #include "sql/ast_printer.h"
 
 namespace cardinal {
@@ -103,6 +104,10 @@ void write(const PhysicalPlan& plan, int depth, std::string& out) {
             },
         },
         plan.node);
+    // An index scan says what order it reads in. A Sort already shows its keys, so it adds
+    // nothing; a sort aggregate says when it found its input in order and skipped the sort.
+    if (std::holds_alternative<PhysicalIndexScan>(plan.node)) line += "  sorted by " + describe_order(sorted_by(plan));
+    if (const auto* agg = std::get_if<PhysicalSortAggregate>(&plan.node); agg && agg->presorted) line += "  input already sorted";
     out += std::string(static_cast<std::size_t>(depth) * 2, ' ') + line;
     for (const PhysicalPlan* child : children) {
         out += "\n";

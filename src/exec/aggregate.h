@@ -51,7 +51,8 @@ private:
 class SortAggregate : public Operator {
 public:
     const char* name() const override { return "SortAggregate"; }
-    SortAggregate(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> keys, std::vector<PhysicalAggregateCall> calls);
+    SortAggregate(std::unique_ptr<Operator> input, std::vector<BoundExprPtr> keys, std::vector<PhysicalAggregateCall> calls,
+                  bool presorted = false);
 
     std::vector<const Operator*> children() const override { return {input_.get()}; }
 
@@ -62,6 +63,7 @@ private:
     std::unique_ptr<Operator> input_;
     std::vector<BoundExprPtr> keys_;
     std::vector<PhysicalAggregateCall> calls_;
+    bool presorted_;  // the input arrives in key order, so there is nothing to sort
 
     std::vector<Row> output_;
     std::size_t next_ = 0;

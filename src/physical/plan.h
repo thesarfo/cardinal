@@ -28,6 +28,7 @@ struct PhysicalIndexScan {
     std::string table;
     std::string index;
     std::string column;
+    std::size_t column_index;  // position of the column in the table, and so in the rows produced
     std::optional<Bound> lo, hi;
 };
 struct PhysicalEmpty {};
@@ -92,6 +93,7 @@ struct PhysicalSortAggregate {
     PhysicalPtr input;
     std::vector<BoundExprPtr> keys;
     std::vector<PhysicalAggregateCall> aggregates;
+    bool presorted = false;  // the input already arrives in key order, so the sort is skipped
 };
 
 struct PhysicalPlan {
