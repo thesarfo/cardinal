@@ -36,18 +36,4 @@ Shell commands: `.demo [users]`, `.stats table`, `.bushy on|off` (join order sea
 
 ## Experiments
 
-`bench/run_e1.sh` through `bench/run_e7.sh` rebuild their data, time it in a release build and write a CSV that names the compiler, flags, CPU and commit. The write-ups are in `docs/benchmarks.md`.
-
-## Where to read
-
-| | |
-|---|---|
-| `docs/architecture.md` | the pipeline and the source tree |
-| `docs/optimizer.md` | the rules, join order search, grouping, indexes, output order |
-| `docs/cardinality-estimation.md` | statistics and how row counts are guessed |
-| `docs/cost-model.md` | the formulas and how the constants were fitted |
-| `docs/indexes.md` | the B+ tree and index scans |
-| `docs/execution-engine.md` | the operators |
-| `docs/benchmarks.md` | experiments E1 to E7, with data |
-| `docs/decisions.md` | what was chosen and what was passed on |
-| `docs/status.md` | what is built, what is not |
+`bench/run_e1.sh` through `bench/run_e7.sh` rebuild their data, time it in a release build and write a CSV that names the compiler, flags, CPU and commit.
